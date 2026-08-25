@@ -1,0 +1,28 @@
+{
+  "description": "Unclaudish: lint the final message for claudish patterns on Stop (block once with feedback), and inject a one-line plain-language reminder each turn.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_stop.py",
+            "timeout": 15,
+            "statusMessage": "Checking writing style"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/remind.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

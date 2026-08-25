@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Generated eval artifacts (rebuild with eval/build_arms.py)
+eval/arm-plugins/
+
+# Eval run data: raw model outputs, judge verdicts, reports
+eval/results/
+
+# Sandboxed HOME and neutral workdir used by eval runs
+eval/home-sandbox/
+eval/workdir/

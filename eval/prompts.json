@@ -1,0 +1,94 @@
+{
+  "prompts": [
+    {
+      "id": "bug-explain",
+      "archetype": "bug explanation",
+      "prompt": "Our CI test test_refresh_token was flaky and I fixed it. The old code did: token = get_token(); sleep(0.1); assert token.valid. The new code polls with a 2 second deadline instead of the fixed sleep. Write the explanation I should paste into the ticket: why the old test was flaky and what the fix does. Audience: my team.",
+      "key_facts": ["fixed sleep replaced by polling", "2 second deadline", "race between token issuance and assertion causes flakiness"]
+    },
+    {
+      "id": "review-verdict",
+      "archetype": "code review verdict",
+      "prompt": "Review this change and tell me if it is ready to merge. Diff summary: adds a retry wrapper around fetch_user() with 3 attempts and exponential backoff starting at 100ms; catches all exceptions including ValueError; no new tests; the wrapper logs at error level on every attempt. Give a verdict and the reasons.",
+      "key_facts": ["catching all exceptions including ValueError is wrong or risky", "missing tests", "logging every attempt at error level is noisy", "verdict stated"]
+    },
+    {
+      "id": "arch-opinion",
+      "archetype": "architecture recommendation",
+      "prompt": "We run a job queue on Redis (about 2000 jobs/hour, single region, jobs must not be lost, team of 4 already operates Postgres for the app). Should we move the queue to Postgres? Recommend one option and justify it.",
+      "key_facts": ["a single clear recommendation", "durability of jobs addressed", "operational load of running two systems addressed"]
+    },
+    {
+      "id": "doc-revise",
+      "archetype": "doc revision",
+      "prompt": "Rewrite this README intro so a new user understands it faster. Keep all facts. Text: 'Flowmeter is a library that provides functionality for the measurement and aggregation of streaming event throughput in distributed systems. It supports the configuration of multiple window sizes and offers integrations for Prometheus as well as StatsD, and it can be deployed in any environment that supports Python 3.10 or newer versions.'",
+      "key_facts": ["streaming event throughput measurement", "multiple window sizes", "Prometheus and StatsD", "Python 3.10 or newer"]
+    },
+    {
+      "id": "thread-summary",
+      "archetype": "issue thread summary",
+      "prompt": "Summarize this issue thread for a teammate who just joined. Thread: Jan 3, Priya reports intermittent 502s on /export. Jan 4, Tomas finds the export worker hits a 30s proxy timeout on large tenants. Jan 5, Priya proposes streaming the export. Jan 6, Tomas objects that streaming breaks resumable downloads. Jan 9, they agree to paginate the export API with 10MB pages and keep the proxy timeout. What should the new teammate know?",
+      "key_facts": ["502s caused by 30s proxy timeout on large tenants", "streaming rejected because of resumable downloads", "decision: paginated export with 10MB pages"]
+    },
+    {
+      "id": "postmortem",
+      "archetype": "incident postmortem",
+      "prompt": "Draft a short postmortem from these notes: 14:02 deploy of pricing-service v341. 14:09 checkout error rate 8%. 14:15 rollback started. 14:21 error rate normal. Cause: v341 renamed field discount_pct to discountPercent; the cart service still sent discount_pct; missing field defaulted to 0 and price validation rejected carts with discounts. Action items: contract tests between cart and pricing, alert on checkout errors above 2% within 5 minutes.",
+      "key_facts": ["timeline 14:02 to 14:21 with rollback", "field rename discount_pct to discountPercent", "default 0 caused validation rejections", "both action items present"]
+    },
+    {
+      "id": "onboarding-explain",
+      "archetype": "explain to a new hire",
+      "prompt": "Explain our caching setup to a new engineer. Facts: read-through cache in Redis with 5 minute TTL for product pages; cache keys include the locale; invalidation happens on product update events from Kafka; a stale-while-revalidate window of 30 seconds serves old content while refreshing; the checkout path never uses the cache. Write the explanation.",
+      "key_facts": ["read-through Redis cache, 5 minute TTL", "keys include locale", "Kafka events invalidate", "30 second stale-while-revalidate", "checkout bypasses cache"]
+    },
+    {
+      "id": "plan-critique",
+      "archetype": "plan critique",
+      "prompt": "Here is my migration plan, give me your assessment: Step 1, dual-write orders to the old MySQL table and the new DynamoDB table starting Monday. Step 2, backfill 90 days of history the same day. Step 3, switch reads to DynamoDB on Wednesday. Step 4, stop MySQL writes on Friday and drop the table the following Monday. No verification steps are listed and there is no rollback plan.",
+      "key_facts": ["missing verification or comparison of old vs new reads", "dropping the table one week after cutover is too soon or risky", "needs a rollback plan"]
+    },
+    {
+      "id": "correction-turn",
+      "archetype": "responding to a correction",
+      "prompt": "Earlier you told me that SQLite does not support concurrent readers during a write. I checked the docs: in WAL mode readers continue during a write. Respond to my correction and tell me what this means for our decision to use SQLite for the analytics dashboard.",
+      "key_facts": ["acknowledges WAL mode allows readers during a write", "connects it to the dashboard decision", "no flattery opener"]
+    },
+    {
+      "id": "tradeoff",
+      "archetype": "tradeoff comparison",
+      "prompt": "Compare using Alembic versus hand-written SQL files for schema migrations in a 6-person Python team with two production databases, and recommend one. Constraints: some team members are new to SQLAlchemy; audits require a plain SQL record of every schema change.",
+      "key_facts": ["a single recommendation", "audit requirement for plain SQL addressed", "learning curve for SQLAlchemy newcomers addressed"]
+    },
+    {
+      "id": "pr-description",
+      "archetype": "PR description",
+      "prompt": "Write the PR description. Change: adds rate limiting to the public search endpoint, 30 requests/minute per API key using a sliding window in Redis; returns 429 with a Retry-After header; existing enterprise keys are exempt via an allowlist in config/limits.yaml; includes unit tests and a load test script.",
+      "key_facts": ["30 requests/minute sliding window", "429 with Retry-After", "enterprise allowlist in config/limits.yaml", "tests included"]
+    },
+    {
+      "id": "release-notes",
+      "archetype": "release notes",
+      "prompt": "Write user-facing release notes for v2.8 from these changes: CSV import now handles files up to 500MB (was 50MB); fixed a bug where deleting a tag removed it from archived documents; new keyboard shortcut Ctrl+K opens the search palette; the legacy XML export is deprecated and will be removed in v3.0.",
+      "key_facts": ["500MB CSV limit", "tag deletion bug fix mentions archived documents", "Ctrl+K search palette", "XML export deprecated, removed in v3.0"]
+    },
+    {
+      "id": "long-context",
+      "archetype": "long input summary",
+      "prompt": "Below are 20 changelog entries. Summarize what a database administrator needs to know in one short paragraph, then list the 3 entries that require action before upgrading. Entries: 1) Query planner rewritten for join reordering. 2) Default checkpoint interval changed from 5m to 15m. 3) New EXPLAIN VERBOSE output format. 4) Deprecated the legacy replication protocol; removal in the next major version. 5) Vacuum now runs incrementally. 6) Added SCRAM authentication as the default; MD5 auth disabled unless explicitly re-enabled. 7) Faster index builds on spinning disks. 8) New system view for lock waits. 9) Backup tool renamed from dbbackup to db-backup; old name is a symlink for one release. 10) JSON path expressions support wildcards. 11) Reduced WAL volume for bulk inserts. 12) Connection pooler ships in core. 13) Timezone data updated. 14) Partitioned tables support foreign keys. 15) The config parameter work_mem is now per-operation instead of per-query. 16) Documentation moved to a new site. 17) Parallel query enabled by default. 18) Extension API stabilized. 19) Windows builds use a new compiler. 20) Startup log line format changed, which may break log parsers.",
+      "key_facts": ["MD5 auth disabled by default flagged as action item", "work_mem semantic change flagged", "one of: backup tool rename or log format change flagged as action item", "one short paragraph plus a 3-item list"]
+    },
+    {
+      "id": "neg-control-files",
+      "archetype": "negative control",
+      "prompt": "List the standard HTTP methods and give one sentence for each describing when to use it.",
+      "key_facts": ["GET, POST, PUT, PATCH, DELETE at minimum", "one sentence each"]
+    },
+    {
+      "id": "neg-control-convert",
+      "archetype": "negative control",
+      "prompt": "Convert this to YAML and show only the result: {\"service\": \"search\", \"replicas\": 3, \"limits\": {\"cpu\": \"500m\", \"memory\": \"256Mi\"}, \"env\": [\"prod\", \"staging\"]}",
+      "key_facts": ["valid YAML", "all keys and values preserved", "no commentary"]
+    }
+  ]
+}

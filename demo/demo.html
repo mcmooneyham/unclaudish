@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unclaudish Live Demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --paper:#FAFAF8; --ink:#22211E; --muted:#6E6A61; --line:#E4E1D8;
+  --mark:#B0342A; --mark-soft:#F6E7E5; --ok:#3E7C4F; --ok-soft:#E7F0E9;
+  --data:#4A6FA5; --data-soft:#E9EEF6; --card:#FFFFFF;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#1B1A18; --ink:#E9E6DF; --muted:#A29C8F; --line:#37342E;
+    --mark:#E07A70; --mark-soft:#3A2523; --ok:#7FB58D; --ok-soft:#24332A;
+    --data:#8FADD6; --data-soft:#232B38; --card:#232220;
+  }
+}
+* { box-sizing:border-box; }
+body { background:var(--paper); color:var(--ink); margin:0;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5;
+  padding:2.5rem 1.25rem 4rem; }
+main { max-width:74rem; margin:0 auto; }
+h1 { font-family:"Source Serif 4",Georgia,serif; font-size:2rem;
+  margin:0 0 .3rem; }
+.lede { color:var(--muted); margin:0 0 1.4rem; max-width:46rem; }
+textarea { width:100%; min-height:7rem; background:var(--card);
+  color:var(--ink); border:1px solid var(--line); border-radius:8px;
+  padding:.8rem; font:inherit; font-size:.92rem; resize:vertical; }
+.controls { display:flex; gap:.7rem; align-items:center;
+  margin:.6rem 0 1.4rem; flex-wrap:wrap; }
+select, button.go { font:inherit; padding:.45rem .9rem;
+  border-radius:6px; border:1px solid var(--line);
+  background:var(--card); color:var(--ink); max-width:18rem; }
+button.go { background:var(--ok); color:#fff; border:none;
+  font-weight:600; cursor:pointer; padding:.45rem 1.4rem; }
+button.go:disabled { opacity:.5; cursor:wait; }
+.status { color:var(--muted); font-size:.85rem; }
+.error { color:var(--mark); font-size:.88rem; margin:.6rem 0; }
+.grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+@media (max-width:1000px) { .grid { grid-template-columns:1fr; } }
+.panel { background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:1rem 1.1rem; min-width:0; }
+.panel.baseline { border-top:3px solid var(--mark); }
+.panel.unclaudish { border-top:3px solid var(--data); }
+.panel.max { border-top:3px solid var(--ok); }
+.panel h2 { font-size:.75rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 .35rem;
+  display:flex; justify-content:space-between; gap:.5rem; }
+.stat { font-family:"IBM Plex Mono",monospace; font-size:.7rem;
+  color:var(--data); text-transform:none; letter-spacing:0; }
+.chips { margin:0 0 .6rem; min-height:1.1rem; }
+.pchip { display:inline-block; font-family:"IBM Plex Mono",monospace;
+  font-size:.68rem; background:var(--data-soft); color:var(--data);
+  border-radius:999px; padding:.1rem .55rem; margin:.1rem .15rem; }
+.pchip.hard { background:var(--mark-soft); color:var(--mark); }
+.wait { display:flex; align-items:center; gap:.6rem;
+  color:var(--muted); font-family:"IBM Plex Mono",monospace;
+  font-size:.8rem; }
+.spinner { width:.9rem; height:.9rem; border:2px solid var(--line);
+  border-top-color:var(--data); border-radius:50%;
+  animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation:none; border-top-color:var(--line); } }
+.out { overflow-wrap:break-word;
+  font-size:.88rem; max-height:30rem; overflow-y:auto; }
+.out p { margin:.45rem 0; }
+.out h3, .out h4, .out h5, .out h6 { font-family:"IBM Plex Sans",
+  system-ui,sans-serif; font-size:.95rem; margin:.8rem 0 .3rem; }
+.out ul, .out ol { margin:.4rem 0; padding-left:1.4rem; }
+.out li { margin:.15rem 0; }
+.out code { font-family:"IBM Plex Mono",monospace; font-size:.92em;
+  background:var(--data-soft); padding:.04rem .3rem;
+  border-radius:3px; }
+.out pre { background:var(--data-soft); padding:.6rem .7rem;
+  border-radius:6px; overflow-x:auto; }
+.out pre code { background:none; padding:0; }
+.out hr { border:none; border-top:1px solid var(--line);
+  margin:.7rem 0; }
+.mdt { overflow-x:auto; margin:.4rem 0; }
+.out table { border-collapse:collapse; font-size:.84rem; }
+.out th, .out td { border:1px solid var(--line);
+  padding:.28rem .5rem; text-align:left; }
+h3 { font-family:"Source Serif 4",Georgia,serif; font-size:1.2rem;
+  margin:2rem 0 .3rem; }
+.twrap { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:.82rem; }
+th { text-align:left; font-size:.68rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted);
+  padding:.3rem .55rem; border-bottom:2px solid var(--line); }
+td { padding:.32rem .55rem; border-bottom:1px solid var(--line); }
+td.n { font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+<h1>Unclaudish Live Demo</h1>
+<p class="lede">Give Claude a task and watch it answered three ways on
+your own Claude Code login: no plugin, the unclaudish style, and
+unclaudish-max. Chips show the claudish patterns the plugin's lexicon
+detected in each answer.</p>
+
+<div class="controls">
+  <select id="preset"><option value="">Custom task...</option></select>
+  <select id="model">
+    <option value="claude-sonnet-5">Sonnet 5</option>
+    <option value="claude-opus-5">Opus 5</option>
+    <option value="claude-fable-5">Fable 5</option>
+    <option value="haiku">Haiku 4.5</option>
+  </select>
+  <select id="effort">
+    <option value="default">Default effort</option>
+    <option value="low">Low effort</option>
+    <option value="medium">Medium effort</option>
+    <option value="high">High effort</option>
+    <option value="xhigh">Extra-high effort</option>
+  </select>
+  <button class="go" id="go">Run task</button>
+  <span class="status" id="status"></span>
+</div>
+<textarea id="input" placeholder="Ask anything: review a diff summary, recommend an architecture, explain a bug..."></textarea>
+<div class="error" id="error"></div>
+
+<div class="grid">
+  <div class="panel baseline">
+    <h2>No plugin <span class="stat" id="baselinestat"></span></h2>
+    <div class="chips" id="baselinechips"></div>
+    <div class="out" id="baselineout">Waiting.</div>
+  </div>
+  <div class="panel unclaudish">
+    <h2>unclaudish <span class="stat" id="unclaudishstat"></span></h2>
+    <div class="chips" id="unclaudishchips"></div>
+    <div class="out" id="unclaudishout">Waiting.</div>
+  </div>
+  <div class="panel max">
+    <h2>unclaudish-max <span class="stat" id="maxstat"></span></h2>
+    <div class="chips" id="maxchips"></div>
+    <div class="out" id="maxout">Waiting.</div>
+  </div>
+</div>
+
+<h3 id="comparehead" style="display:none">This run</h3>
+<div class="twrap"><table id="comparetable"></table></div>
+
+<script>
+const el = id => document.getElementById(id);
+const ARMS = ['baseline', 'unclaudish', 'max'];
+
+async function loadPresets() {
+  try {
+    const presets = await (await fetch('/presets')).json();
+    for (const p of presets) {
+      const opt = document.createElement('option');
+      opt.value = p.prompt;
+      opt.textContent = p.archetype + ' (' + p.id + ')';
+      el('preset').appendChild(opt);
+    }
+  } catch (e) { /* presets are optional */ }
+}
+function autosize() {
+  const t = el('input');
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight + 4, 600) + 'px';
+}
+el('preset').addEventListener('change', () => {
+  if (el('preset').value) {
+    el('input').value = el('preset').value;
+    autosize();
+  }
+});
+el('input').addEventListener('input', autosize);
+
+function chips(breakdown) {
+  return breakdown.length
+    ? breakdown.map(b =>
+        `<span class="pchip${b.hard ? ' hard' : ''}">` +
+        `${b.id} x${b.count}</span>`).join('')
+    : '<span class="pchip" style="opacity:.55">clean</span>';
+}
+
+const LABELS = {baseline: 'No plugin', unclaudish: 'unclaudish',
+                max: 'unclaudish-max'};
+
+function tableHeader() {
+  return '<tr><th>Answer</th><th>Words</th>' +
+    '<th>Claudish patterns</th><th>Blockable</th>' +
+    '<th>Output tokens</th><th>Thinking tokens</th>' +
+    '<th>Seconds</th><th>Cost</th></tr>';
+}
+
+function rowFor(arm, d) {
+  if (!d) return `<tr id="row-${arm}"><td>${LABELS[arm]}</td>` +
+    '<td class="n" colspan="7">running...</td></tr>';
+  const cost = d.cost_usd != null ? '$' + d.cost_usd.toFixed(4) : '';
+  return `<tr id="row-${arm}"><td>${LABELS[arm]}</td>` +
+    `<td class="n">${d.words}</td><td class="n">${d.patterns}</td>` +
+    `<td class="n">${d.hard_violations}</td>` +
+    `<td class="n">${d.output_tokens}</td>` +
+    `<td class="n">${d.thinking_tokens}</td>` +
+    `<td class="n">${d.seconds}</td><td class="n">${cost}</td></tr>`;
+}
+
+async function runArm(arm, text, model, started) {
+  const timer = setInterval(() => {
+    const s = ((Date.now() - started) / 1000).toFixed(0);
+    const t = el(arm + 'out').querySelector('.elapsed');
+    if (t) t.textContent = s + 's';
+  }, 250);
+  try {
+    const res = await fetch('/rewrite', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text, model, style: arm,
+        effort: el('effort').value}),
+    });
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    el(arm + 'out').innerHTML = d.html || d.text;
+    el(arm + 'chips').innerHTML = chips(d.breakdown);
+    el(arm + 'stat').textContent =
+      `${d.patterns} patterns, ${d.words} words`;
+    document.getElementById('row-' + arm).outerHTML = rowFor(arm, d);
+  } catch (err) {
+    el(arm + 'out').innerHTML = '';
+    el(arm + 'out').textContent = 'Failed: ' + err.message;
+    const row = document.getElementById('row-' + arm);
+    row.outerHTML = `<tr id="row-${arm}"><td>${LABELS[arm]}</td>` +
+      '<td colspan="7">failed</td></tr>';
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function run() {
+  const text = el('input').value.trim();
+  if (!text) return;
+  el('go').disabled = true;
+  el('error').textContent = '';
+  el('status').textContent = '';
+  el('comparehead').style.display = '';
+  el('comparetable').innerHTML = tableHeader() +
+    ARMS.map(a => rowFor(a, null)).join('');
+  const started = Date.now();
+  for (const a of ARMS) {
+    el(a + 'chips').innerHTML = '';
+    el(a + 'stat').textContent = '';
+    el(a + 'out').innerHTML =
+      '<div class="wait"><div class="spinner"></div>' +
+      '<span class="elapsed">0s</span></div>';
+  }
+  await Promise.all(ARMS.map(a => runArm(a, text,
+    el('model').value, started)));
+  el('go').disabled = false;
+}
+
+el('go').addEventListener('click', run);
+loadPresets();
+</script>
+</main>
+</body>
+</html>

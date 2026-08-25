@@ -1,0 +1,21 @@
+{
+  "name": "unclaudish",
+  "owner": {
+    "name": "Matt Mooneyham",
+    "url": "https://github.com/mcmooneyham"
+  },
+  "description": "Plain-language tooling for Claude Code",
+  "plugins": [
+    {
+      "name": "unclaudish",
+      "source": "./",
+      "description": "Makes Claude write plain natural language instead of claudish.",
+      "category": "productivity",
+      "tags": [
+        "writing",
+        "style",
+        "plain-language"
+      ]
+    }
+  ]
+}

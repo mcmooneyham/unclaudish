@@ -1,0 +1,64 @@
+{
+  "cases": [
+    {
+      "id": "alice-gate",
+      "text": "Alice's approval is the hard gate here. Skip it and you've built a footgun into the load-bearing part of your release process. The release can land only after that clears.",
+      "must_keep": ["release requires Alice's approval", "release happens only after approval"],
+      "must_not": ["approval described as optional", "anyone other than Alice as approver"]
+    },
+    {
+      "id": "trigger-not-exclusive",
+      "text": "If the canary error rate surfaces above 2%, the rollback path is your move. That's the tripwire, and it's load-bearing.",
+      "must_keep": ["roll back if canary error rate goes above 2%"],
+      "must_not": ["rollback described as allowed ONLY when the rate exceeds 2%", "threshold changed from 2%"]
+    },
+    {
+      "id": "untested-not-broken",
+      "text": "The retry path? Untested. Not broken, mind you, but untested, and that distinction is doing a lot of work here.",
+      "must_keep": ["the retry path is untested"],
+      "must_not": ["the retry path described as broken or failing"]
+    },
+    {
+      "id": "required-not-sufficient",
+      "text": "Green CI is the gate, not a suggestion. But here's the thing: green CI isn't the whole story; the security review still has to clear.",
+      "must_keep": ["CI must pass", "security review must also pass"],
+      "must_not": ["passing CI described as sufficient by itself"]
+    },
+    {
+      "id": "numbers-exact",
+      "text": "The p99 latency landed at 412ms, a hair under the 450ms budget. Not great, not terrible: the p50 sits at 38ms.",
+      "must_keep": ["p99 is 412ms", "budget is 450ms", "p50 is 38ms"],
+      "must_not": ["any changed number or unit"]
+    },
+    {
+      "id": "uncertainty-preserved",
+      "text": "The smoking gun is probably the connection pool, though I haven't ruled out the DNS cache. Honest take: I'd put it at 70/30.",
+      "must_keep": ["connection pool is the likely cause", "DNS cache not ruled out", "the 70/30 estimate"],
+      "must_not": ["certainty about the cause"]
+    },
+    {
+      "id": "code-untouched",
+      "text": "The fix isn't in `parse_config()`, it's in `validate_schema()`, and the flag `--strict-mode` is the unlock here.",
+      "must_keep": ["parse_config()", "validate_schema()", "--strict-mode", "the fix is in validate_schema, not parse_config"],
+      "must_not": ["renamed identifiers"]
+    },
+    {
+      "id": "negation-preserved",
+      "text": "The migration never runs twice, and that's not an accident: the idempotency key is doing the heavy lifting. Don't remove it.",
+      "must_keep": ["the migration never runs twice", "the idempotency key prevents this", "do not remove the key"],
+      "must_not": ["the migration described as running twice", "removal described as safe"]
+    },
+    {
+      "id": "condition-stack",
+      "text": "Deploys are owner-gated and freeze-window-aware: outside the freeze, an owner can ship; inside it, nobody ships, full stop, not even owners.",
+      "must_keep": ["outside the freeze window owners can deploy", "inside the freeze window nobody can deploy including owners"],
+      "must_not": ["owners able to deploy during the freeze"]
+    },
+    {
+      "id": "scope-narrow",
+      "text": "The cache layer surfaced stale reads on the EU cluster. The US cluster? Clean, as far as the probes can see, and that caveat matters.",
+      "must_keep": ["stale reads on the EU cluster", "US cluster shows no stale reads according to probes", "the probe-visibility caveat"],
+      "must_not": ["US cluster declared definitely clean without the caveat", "the problem generalized to all clusters"]
+    }
+  ]
+}
