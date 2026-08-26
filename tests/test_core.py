@@ -533,6 +533,45 @@ class LintFileProcess(unittest.TestCase):
             self.assertEqual(proc.stdout.strip(), b"")
 
 
+class RemindModes(unittest.TestCase):
+    REMIND = os.path.join(REPO_ROOT, "scripts", "remind.sh")
+
+    def run_remind(self, mode):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        with tempfile.TemporaryDirectory() as home:
+            env["HOME"] = home
+            if mode is not None:
+                claude_dir = os.path.join(home, ".claude")
+                os.makedirs(claude_dir)
+                with open(os.path.join(claude_dir,
+                                       "unclaudish-mode"), "w") as f:
+                    f.write(mode + "\n")
+            return subprocess.run(["bash", self.REMIND],
+                                  capture_output=True, env=env,
+                                  timeout=10).stdout
+
+    def test_default_mode(self):
+        out = self.run_remind(None)
+        self.assertIn(b"plain natural language", out)
+
+    def test_on_mode(self):
+        out = self.run_remind("on")
+        self.assertIn(b"plain natural language", out)
+
+    def test_legacy_flag_value_treated_as_on(self):
+        out = self.run_remind("unclaudish")
+        self.assertIn(b"plain natural language", out)
+
+    def test_max_mode(self):
+        out = self.run_remind("max")
+        self.assertIn(b"unclaudish-max", out)
+        self.assertIn(b"Under 60 words", out)
+
+    def test_off_mode_silent(self):
+        self.assertEqual(self.run_remind("off").strip(), b"")
+
+
 class Robustness(unittest.TestCase):
     def test_fuzz_never_raises(self):
         rng = random.Random(42)

@@ -85,6 +85,17 @@ Picking any non-plugin style turns the register off while keeping
 the linter and reminder active. Styles load at session start, so
 changes take effect after `/clear` or a new session.
 
+For instant switching mid-session, use the mode command instead:
+
+    /unclaudish:mode max
+    /unclaudish:mode on
+    /unclaudish:mode off
+
+It takes effect on the next message, no restart needed. `max` is the
+extreme register (the answer, one reason, an offer of more), `off`
+pauses the per-turn reinforcement, and `status` reports the current
+mode.
+
 ## Live demo
 
     python3 demo/serve.py
