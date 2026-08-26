@@ -123,6 +123,12 @@ One benchmark run, same prompt and model, three configurations:
 you can install mid-project without `/clear` and without losing
 context. The style applies from your next message.
 
+`/config` is the exception. Claude Code reads the output style once
+at startup and does not reload it, so the session where you install
+keeps showing `Default` no matter what. The setting is written to
+`~/.claude/settings.json` right away, and `/config` shows
+`unclaudish` in your next session.
+
 Or try it without installing:
 
     claude --plugin-dir /path/to/unclaudish

@@ -991,11 +991,21 @@ class StyleSync(unittest.TestCase):
         self.assertIn(b"unclaudish:unclaudish", proc.stdout)
         self.assertFalse(os.path.exists(self.mode_file))
 
-    def test_hook_registered_for_session_start(self):
+    def test_hooks_registered_for_startup_and_config_change(self):
         with open(os.path.join(REPO_ROOT, "hooks", "hooks.json")) as f:
             hooks = json.load(f)["hooks"]
-        command = hooks["SessionStart"][0]["hooks"][0]["command"]
-        self.assertIn("sync_style.py reconcile", command)
+        for event in ("SessionStart", "ConfigChange"):
+            command = hooks[event][0]["hooks"][0]["command"]
+            self.assertIn("sync_style.py reconcile", command, event)
+
+    def test_reconcile_is_idempotent(self):
+        # ConfigChange fires when settings change, including our own
+        # write, so a second pass must produce no further write.
+        self.write_settings({"model": "opus"})
+        self.run_sync("reconcile")
+        first = os.stat(self.settings).st_mtime_ns
+        self.run_sync("reconcile")
+        self.assertEqual(os.stat(self.settings).st_mtime_ns, first)
 
     def test_no_style_file_forces_itself_on_the_user(self):
         # force-for-plugin overrides an explicit setting, which would

@@ -2,7 +2,7 @@
   "name": "unclaudish",
   "displayName": "Unclaudish",
   "description": "Makes Claude write plain natural language instead of claudish: two output styles (unclaudish, unclaudish-max), a style linter for replies and file writes, a per-turn reminder that applies the style without a restart, and a rewrite skill.",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "author": {
     "name": "Matt Mooneyham"
   },
