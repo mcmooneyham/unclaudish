@@ -61,6 +61,15 @@ Or try it without installing:
 
     claude --plugin-dir /path/to/unclaudish
 
+## Choosing a style
+
+Installing the plugin applies `unclaudish` automatically. To switch:
+
+    /output-style unclaudish-max
+
+Pick `unclaudish` to switch back, or any other style to turn the
+register off while keeping the linter and reminder active.
+
 ## Live demo
 
     python3 demo/serve.py
@@ -69,6 +78,19 @@ Opens a local page: pick a task (or write one) and see it answered
 three ways side by side (no plugin, unclaudish, unclaudish-max) with
 detected-pattern chips, token counts, and cost. Runs on your own
 Claude Code login.
+
+## Benchmark
+
+    python3 demo/bench.py
+
+Runs a matrix of tasks x models x effort levels x N repetitions,
+each answered three ways (no plugin, unclaudish, unclaudish-max).
+The dashboard shows live headline numbers (token, time, length, and
+cost reductions against baseline), filterable statistics by model,
+effort, or prompt, and a run list; click any run to watch its three
+answers stream side by side. Results persist to
+`demo/bench-results/` as JSONL. Runs bill to your own Claude Code
+login, so size the matrix accordingly.
 
 ## Turn it off
 
