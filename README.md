@@ -26,6 +26,16 @@ paired prompts, harness in `eval/`):
 | Full plugin (unclaudish style) | **0%** | 0.61 | 347 |
 | Full plugin (unclaudish-max style) | **0%** | 0.23 | 282 |
 
+**Blockable claudish** is any of the seven patterns the linter
+rejects outright: an em-dash, a flattery opener like "You're
+absolutely right", "here's the thing", "worth noting", "crucially",
+or "delve into". The column shows the share of replies containing at
+least one. The **claudish score** is a weighted count of every
+lexicon match in a reply (those seven plus about forty scored-only
+patterns such as contrast framing and jargon), normalized by reply
+length; 0 is clean prose and the exact formula is in
+`scripts/claudish_core.py`.
+
 On Opus 5 the baseline was worse (93% of replies contained blockable
 claudish) and the results held: the style cut it to 7% and the
 linter removed the rest. Answer quality was judged separately and
@@ -63,12 +73,17 @@ Or try it without installing:
 
 ## Choosing a style
 
-Installing the plugin applies `unclaudish` automatically. To switch:
+Installing the plugin applies `unclaudish` automatically, unless
+you have explicitly chosen an output style before; an explicit
+choice always wins. Check with `/output-style`, and pick a style
+directly at any time:
 
+    /output-style unclaudish
     /output-style unclaudish-max
 
-Pick `unclaudish` to switch back, or any other style to turn the
-register off while keeping the linter and reminder active.
+Pick any other style to turn the register off while keeping the
+linter and reminder active. Style changes take effect in new
+sessions (or after /clear).
 
 ## Live demo
 
