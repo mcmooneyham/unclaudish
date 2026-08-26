@@ -124,20 +124,21 @@ Or try it without installing:
 
 ## Modes and styles
 
-After installing, pick a mode once:
-
-    /unclaudish:mode on
-
-It sets the output style (visible in `/config`) and switches the
-register from your next message. Change any time, mid-session:
+The plain style turns itself on at install: the first session writes
+`outputStyle` into `~/.claude/settings.json`, so every project uses
+it. Switch registers any time:
 
     /unclaudish:mode max
     /unclaudish:mode on
     /unclaudish:mode off
 
+The reply register changes with your next message. The full style
+loads after `/clear` or in a new session, which is also when
+`/config` shows the change. Picking a style in `/config` works too:
+the plugin follows whichever you choose.
+
 `off` turns the register off: linters stop, the reminder stops, and
-the style is countermanded each turn. You can also pick styles the
-standard way via `/config` (takes effect after `/clear`).
+the style is countermanded each turn.
 
 ## Stats footer
 
@@ -161,8 +162,15 @@ your own Claude Code login.
 
     /unclaudish:mode off
 
-- or `touch ~/.claude/unclaudish-off` (delete to resume)
-- or `UNCLAUDISH_DISABLE=1`, or disable in `/plugin`
+That also clears the `outputStyle` setting, so run it before you
+uninstall to leave no trace in `~/.claude/settings.json`. Uninstalling
+first is harmless: the leftover style name stops resolving and Claude
+Code falls back to its default style.
+
+Other switches:
+
+- `touch ~/.claude/unclaudish-off` (delete to resume)
+- `UNCLAUDISH_DISABLE=1`, or disable in `/plugin`
 
 ## Development
 

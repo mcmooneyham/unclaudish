@@ -1,37 +1,31 @@
 ---
 name: mode
-description: Switch the unclaudish register for every future turn. Use when asked to change unclaudish mode, go max, or turn the reminder off.
+description: Switch the unclaudish register everywhere. Use when asked to change unclaudish mode, go max, or turn unclaudish off.
 argument-hint: [on|max|off|status]
 allowed-tools: Bash
 ---
 
 Set the unclaudish mode. The argument is $ARGUMENTS (default:
-status). Treat a flag value of `unclaudish` as `on`.
+status).
 
 - `on`: the standard plain register.
 - `max`: extreme brevity. The answer, one reason, an offer of more.
 - `off`: linters stop, the reminder stops, the style is
   countermanded each turn. Stats keeps its own switch.
-- `status`: report the current mode without changing anything.
+- `status`: report the current mode and style, changing nothing.
 
-To set a mode, do BOTH steps, then confirm in one sentence:
+Run exactly this, with MODE replaced by on, max, off, or status:
 
-1. Write the flag file (drives the hooks, effective next message):
+    ROOT="${CLAUDE_PLUGIN_ROOT:-$(ls -d "$HOME"/.claude/plugins/cache/*/unclaudish/* 2>/dev/null | sort -V | tail -1)}"
+    python3 "$ROOT/scripts/sync_style.py" set MODE
 
-       echo MODE > ~/.claude/unclaudish-mode
+For `status`, use `status` as the whole command instead of `set MODE`.
 
-2. Write the output style setting so /config shows it and the full
-   style loads in future sessions. Set STYLE to `unclaudish` for
-   on, `unclaudish-max` for max; for off, use `Default`:
+The script writes the mode flag and the `outputStyle` key in
+`~/.claude/settings.json`, so every project picks it up. Report its
+output in one sentence. Adopt the chosen register yourself
+immediately, from this reply onward.
 
-       python3 -c "
-       import json, os
-       p = '.claude/settings.local.json'
-       os.makedirs('.claude', exist_ok=True)
-       s = json.load(open(p)) if os.path.exists(p) else {}
-       s['outputStyle'] = 'STYLE'
-       json.dump(s, open(p, 'w'), indent=2)"
-
-For status, read the flag file (missing means on) and report it.
-Also adopt the chosen register yourself immediately, from this
-reply onward.
+The register changes with the next message. The full output style
+loads after `/clear` or in a new session, which is also when
+`/config` shows the change.

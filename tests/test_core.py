@@ -781,5 +781,157 @@ class LintStopProcess(unittest.TestCase):
             os.unlink(transcript)
 
 
+class StyleSync(unittest.TestCase):
+    """The mode flag and the global outputStyle must stay in step.
+
+    Probe-verified: a plugin style is only selected by its namespaced
+    name, so a bare "unclaudish-max" in settings selects nothing.
+    """
+
+    SYNC = os.path.join(REPO_ROOT, "scripts", "sync_style.py")
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="sync-home-")
+        self.claude_dir = os.path.join(self.home, ".claude")
+        os.makedirs(self.claude_dir)
+        self.settings = os.path.join(self.claude_dir, "settings.json")
+        self.mode_file = os.path.join(self.claude_dir,
+                                      "unclaudish-mode")
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def run_sync(self, *args, stdin=b""):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        return subprocess.run([sys.executable, self.SYNC] + list(args),
+                              input=stdin, capture_output=True,
+                              env=env, timeout=10)
+
+    def write_settings(self, data):
+        with open(self.settings, "w") as f:
+            json.dump(data, f)
+
+    def read_settings(self):
+        with open(self.settings) as f:
+            return json.load(f)
+
+    def read_mode(self):
+        with open(self.mode_file) as f:
+            return f.read().strip()
+
+    def test_set_max_writes_namespaced_style(self):
+        self.write_settings({"model": "opus"})
+        self.run_sync("set", "max")
+        data = self.read_settings()
+        self.assertEqual(data["outputStyle"], "unclaudish:unclaudish-max")
+        self.assertEqual(data["model"], "opus")  # nothing else touched
+        self.assertEqual(self.read_mode(), "max")
+
+    def test_set_on_writes_namespaced_style(self):
+        self.run_sync("set", "on")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "unclaudish:unclaudish")
+
+    def test_set_creates_settings_when_missing(self):
+        self.run_sync("set", "on")
+        self.assertTrue(os.path.exists(self.settings))
+
+    def test_off_removes_our_style_only(self):
+        self.write_settings({"outputStyle": "unclaudish:unclaudish-max",
+                             "model": "opus"})
+        self.run_sync("set", "off")
+        data = self.read_settings()
+        self.assertNotIn("outputStyle", data)
+        self.assertEqual(data["model"], "opus")
+        self.assertEqual(self.read_mode(), "off")
+
+    def test_off_leaves_a_foreign_style_alone(self):
+        self.write_settings({"outputStyle": "Explanatory"})
+        self.run_sync("set", "off")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "Explanatory")
+
+    def test_malformed_settings_are_never_clobbered(self):
+        with open(self.settings, "w") as f:
+            f.write("{not json")
+        self.run_sync("set", "max")
+        with open(self.settings) as f:
+            self.assertEqual(f.read(), "{not json")
+        self.assertEqual(self.read_mode(), "max")  # flag still works
+
+    def test_reconcile_fills_missing_style_for_fresh_install(self):
+        self.write_settings({"model": "opus"})
+        self.run_sync("reconcile")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "unclaudish:unclaudish")
+        self.assertEqual(self.read_mode(), "on")
+
+    def test_reconcile_honors_the_mode_flag(self):
+        with open(self.mode_file, "w") as f:
+            f.write("max\n")
+        self.write_settings({})
+        self.run_sync("reconcile")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "unclaudish:unclaudish-max")
+
+    def test_reconcile_follows_a_style_picked_in_config(self):
+        with open(self.mode_file, "w") as f:
+            f.write("on\n")
+        self.write_settings({"outputStyle": "unclaudish:unclaudish-max"})
+        self.run_sync("reconcile")
+        self.assertEqual(self.read_mode(), "max")
+
+    def test_reconcile_respects_off(self):
+        with open(self.mode_file, "w") as f:
+            f.write("off\n")
+        self.write_settings({"model": "opus"})
+        self.run_sync("reconcile")
+        self.assertNotIn("outputStyle", self.read_settings())
+
+    def test_reconcile_leaves_foreign_styles_alone(self):
+        self.write_settings({"outputStyle": "Explanatory"})
+        self.run_sync("reconcile")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "Explanatory")
+        self.assertFalse(os.path.exists(self.mode_file))
+
+    def test_reconcile_ignores_hook_payload_on_stdin(self):
+        payload = json.dumps({"hook_event_name": "SessionStart",
+                              "source": "startup"}).encode()
+        proc = self.run_sync("reconcile", stdin=payload)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout.strip(), b"")
+        self.assertEqual(self.read_settings()["outputStyle"],
+                         "unclaudish:unclaudish")
+
+    def test_reconcile_skipped_by_kill_switch(self):
+        open(os.path.join(self.claude_dir, "unclaudish-off"), "w").close()
+        self.write_settings({})
+        self.run_sync("reconcile")
+        self.assertNotIn("outputStyle", self.read_settings())
+
+    def test_status_reports_without_changing_anything(self):
+        self.write_settings({"outputStyle": "unclaudish:unclaudish"})
+        proc = self.run_sync("status")
+        self.assertIn(b"unclaudish:unclaudish", proc.stdout)
+        self.assertFalse(os.path.exists(self.mode_file))
+
+    def test_hook_registered_for_session_start(self):
+        with open(os.path.join(REPO_ROOT, "hooks", "hooks.json")) as f:
+            hooks = json.load(f)["hooks"]
+        command = hooks["SessionStart"][0]["hooks"][0]["command"]
+        self.assertIn("sync_style.py reconcile", command)
+
+    def test_no_style_file_forces_itself_on_the_user(self):
+        # force-for-plugin overrides an explicit setting, which would
+        # make the max style unreachable.
+        styles_dir = os.path.join(REPO_ROOT, "output-styles")
+        for name in os.listdir(styles_dir):
+            with open(os.path.join(styles_dir, name)) as f:
+                self.assertNotIn("force-for-plugin", f.read(), name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

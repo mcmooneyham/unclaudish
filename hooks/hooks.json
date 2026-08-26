@@ -1,14 +1,13 @@
 {
-  "description": "Unclaudish: lint the final message on Stop and file comments/prose on PreToolUse (deny with feedback so Claude revises), plus a one-line plain-language reminder each turn.",
+  "description": "Unclaudish: lint the final message on Stop and file comments/prose on PreToolUse (deny with feedback so Claude revises), reinforce the register each turn, and keep the output style setting in sync at session start.",
   "hooks": {
-    "Stop": [
+    "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_stop.py",
-            "timeout": 15,
-            "statusMessage": "Checking writing style"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/sync_style.py reconcile",
+            "timeout": 10
           }
         ]
       }
@@ -20,6 +19,18 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/remind.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_stop.py",
+            "timeout": 15,
+            "statusMessage": "Checking writing style"
           }
         ]
       }
