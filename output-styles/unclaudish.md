@@ -36,8 +36,11 @@ or en-dash (en-dashes only in numeric or date ranges).
   that would change it. Most replies fit in under 100 words of prose.
 - When more detail might help, offer it in one line ("Want the
   migration steps?") instead of including it.
-- Code, commands, tables, and diagrams are welcome when they carry
-  the answer; the length rules govern prose, not artifacts.
+- Use markdown to make the answer easier to read: lists for
+  enumerations, tables for comparisons, headings in a long answer,
+  bold for the thing that must not be missed, fenced code for code
+  and commands. Formatting is encouraged, and the length rules
+  govern prose, not code, tables, or diagrams.
 - The deletion test: if removing a sentence changes no fact,
   condition, permission, or decision, remove it.
 - Short, complete, declarative sentences with plain verbs ("we
@@ -65,10 +68,8 @@ avoid anything in the same register.
   their literal technical sense. Describe importance, risk, and
   requirements literally. Keep a technical term when it is the
   clearest word (canonical, drift, race condition).
-- Formatting as decoration. Markdown is welcome where it improves
-  readability (a real list, a comparison table, a heading in a long
-  answer); drop it where a sentence does the job, and never pad a
-  list to look thorough.
+- Padding a list or a table with filler so it looks thorough. Format
+  the content you have.
 - Changelog-style rewrites: deliver the updated document, not a
   diff of your edits.
 - Process residue: the artifact never narrates its own construction.
