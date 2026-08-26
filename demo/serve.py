@@ -26,6 +26,21 @@ sys.path.insert(0, os.path.join(REPO, "scripts"))
 import claudish_core  # noqa: E402
 
 MAX_INPUT_CHARS = 8000
+
+
+def isolation_settings():
+    """A --settings JSON that disables every installed plugin, so
+    demo and benchmark arms are exactly what they claim: baseline
+    means no plugin, and style packs come only from --plugin-dir."""
+    disabled = {}
+    registry = os.path.expanduser(
+        "~/.claude/plugins/installed_plugins.json")
+    try:
+        for name in json.load(open(registry)).get("plugins", {}):
+            disabled[name] = False
+    except (OSError, ValueError):
+        pass
+    return json.dumps({"enabledPlugins": disabled})
 WORKDIR = tempfile.mkdtemp(prefix="unclaudish-demo-")
 
 
@@ -194,7 +209,8 @@ def run_style(style, text, model, effort="default"):
         env["CLAUDE_EFFORT"] = effort
     command = ["claude", "-p", "--model", model,
                "--output-format", "json", "--tools", "",
-               "--disallowedTools", "mcp__*"]
+               "--disallowedTools", "mcp__*",
+               "--settings", isolation_settings()]
     if STYLE_PACKS[style]:
         command += ["--plugin-dir", STYLE_PACKS[style]]
     proc = subprocess.run(

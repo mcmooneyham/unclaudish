@@ -73,8 +73,17 @@ def run_cell(arm_name, arm_config, prompt, trial, out_dir, model,
         return "skip"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
+    disabled = {}
+    registry = os.path.expanduser(
+        "~/.claude/plugins/installed_plugins.json")
+    try:
+        for name in json.load(open(registry)).get("plugins", {}):
+            disabled[name] = False
+    except (OSError, ValueError):
+        pass
     command = ["claude", "-p", "--model", model,
-               "--output-format", "json", "--tools", ""]
+               "--output-format", "json", "--tools", "",
+               "--settings", json.dumps({"enabledPlugins": disabled})]
     if "plugin" in arm_config:
         command += ["--plugin-dir",
                     os.path.join(ARM_PLUGINS, arm_config["plugin"])]

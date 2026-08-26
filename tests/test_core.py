@@ -362,6 +362,11 @@ class OfferClosers(unittest.TestCase):
         self.assertNotIn("aphoristic_closer",
                          cc.evaluate(text)["metrics"])
 
+    def test_single_sentence_reply_not_a_closer(self):
+        text = "The tests pass and the rollback is documented."
+        self.assertNotIn("aphoristic_closer",
+                         cc.evaluate(text)["metrics"])
+
     def test_statement_closer_still_scored(self):
         text = PAD + "\n\nThat's the whole story."
         self.assertIn("aphoristic_closer", cc.evaluate(text)["metrics"])
@@ -449,9 +454,18 @@ class LintFileProcess(unittest.TestCase):
                                    "unclaudish-state"),
                       ignore_errors=True)
 
-    def run_hook(self, payload):
+    def run_hook(self, payload, mode=None):
         env = dict(os.environ)
         env.pop("UNCLAUDISH_DISABLE", None)
+        self.home = getattr(self, "home", None) or \
+            tempfile.mkdtemp(prefix="lintfile-home-")
+        env["HOME"] = self.home
+        claude_dir = os.path.join(self.home, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        if mode is not None:
+            with open(os.path.join(claude_dir,
+                                   "unclaudish-mode"), "w") as f:
+                f.write(mode)
         return subprocess.run(
             [sys.executable, self.LINT_FILE],
             input=json.dumps(payload).encode() if isinstance(
@@ -526,6 +540,11 @@ class LintFileProcess(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_mode_off_disables_file_linter(self):
+        proc = self.run_hook(self.hook_payload(
+            "/tmp/x.py", "x = 1  # a" + EM + "b\n"), mode="off")
+        self.assertEqual(proc.stdout.strip(), b"")
+
     def test_fail_open_on_garbage(self):
         for payload in (b"", b"not json", b"[]"):
             proc = self.run_hook(payload)
@@ -568,8 +587,61 @@ class RemindModes(unittest.TestCase):
         self.assertIn(b"unclaudish-max", out)
         self.assertIn(b"Under 60 words", out)
 
-    def test_off_mode_silent(self):
-        self.assertEqual(self.run_remind("off").strip(), b"")
+    def test_off_mode_countermands_style(self):
+        out = self.run_remind("off")
+        self.assertIn(b"disregard the unclaudish output style", out)
+
+
+class StatsFooter(unittest.TestCase):
+    SHOW_STATS = os.path.join(REPO_ROOT, "scripts", "show_stats.py")
+
+    def run_hook(self, payload, flag="on"):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        self.home = getattr(self, "home", None) or \
+            tempfile.mkdtemp(prefix="stats-home-")
+        env["HOME"] = self.home
+        claude_dir = os.path.join(self.home, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        if flag is not None:
+            with open(os.path.join(claude_dir,
+                                   "unclaudish-stats"), "w") as f:
+                f.write(flag)
+        return subprocess.run(
+            [sys.executable, self.SHOW_STATS],
+            input=json.dumps(payload).encode(),
+            capture_output=True, env=env, timeout=10)
+
+    def event(self, delta, index, final, msg="m1"):
+        return {"hook_event_name": "MessageDisplay",
+                "session_id": "s1", "message_id": msg,
+                "index": index, "final": final, "delta": delta}
+
+    def test_footer_on_final_covers_all_chunks(self):
+        first = self.run_hook(self.event(
+            "The fix" + EM + "shipped. ", 0, False))
+        self.assertEqual(first.stdout.strip(), b"")
+        second = self.run_hook(self.event(
+            "Tests pass.", 1, True))
+        out = json.loads(second.stdout)
+        content = out["hookSpecificOutput"]["displayContent"]
+        self.assertTrue(content.startswith("Tests pass."))
+        self.assertIn("`unclaudish`", content)
+        self.assertIn("1 blockable", content)
+        self.assertIn("`detected` ", content)
+        self.assertIn("em_dash x1", content)
+
+    def test_off_means_silent(self):
+        proc = self.run_hook(self.event("Hello.", 0, True, "m2"),
+                             flag="off")
+        self.assertEqual(proc.stdout.strip(), b"")
+
+    def test_fail_open_on_garbage(self):
+        env = dict(os.environ)
+        proc = subprocess.run([sys.executable, self.SHOW_STATS],
+                              input=b"not json",
+                              capture_output=True, env=env, timeout=10)
+        self.assertEqual(proc.returncode, 0)
 
 
 class Robustness(unittest.TestCase):
@@ -602,9 +674,22 @@ class LintStopProcess(unittest.TestCase):
                                       "unclaudish-state")
         shutil.rmtree(self.state_dir, ignore_errors=True)
 
-    def run_hook(self, stdin_bytes, env_extra=None):
+    def run_hook(self, stdin_bytes, env_extra=None, mode=None):
         env = dict(os.environ)
         env.pop("UNCLAUDISH_DISABLE", None)
+        # Hermetic HOME so the developer's real mode/kill flags never
+        # leak into test outcomes.
+        self.home = getattr(self, "home", None) or \
+            tempfile.mkdtemp(prefix="lint-home-")
+        env["HOME"] = self.home
+        claude_dir = os.path.join(self.home, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        mode_path = os.path.join(claude_dir, "unclaudish-mode")
+        if mode is None and os.path.exists(mode_path):
+            os.unlink(mode_path)
+        elif mode is not None:
+            with open(mode_path, "w") as f:
+                f.write(mode)
         if env_extra:
             env.update(env_extra)
         proc = subprocess.run(
@@ -644,6 +729,11 @@ class LintStopProcess(unittest.TestCase):
 
     def test_respects_stop_hook_active(self):
         proc = self.run_hook(self.hook_json("A" + EM + "B", active=True))
+        self.assertEqual(proc.stdout.strip(), b"")
+
+    def test_mode_off_disables_linter(self):
+        payload = self.hook_json("A" + EM + "B", "poff")
+        proc = self.run_hook(payload, mode="off")
         self.assertEqual(proc.stdout.strip(), b"")
 
     def test_kill_switch_env(self):

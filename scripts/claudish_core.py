@@ -556,8 +556,8 @@ def _uniformity_points(sentences):
 
 def _aphoristic_closer_points(phrase_corpus):
     paragraphs = [p.strip() for p in phrase_corpus.split("\n\n") if p.strip()]
-    if not paragraphs:
-        return 0.0
+    if len(paragraphs) < 2:
+        return 0.0  # a closer needs something before it to close
     final = paragraphs[-1]
     if final.endswith("?"):
         return 0.0  # a follow-up offer is an invitation, not an aphorism

@@ -15,6 +15,9 @@ if [ -f "$HOME/.claude/unclaudish-mode" ]; then
 fi
 case "$MODE" in
   off)
+    # The forced output style cannot be removed mid-session, so off
+    # countermands it per turn instead.
+    printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"unclaudish is off: disregard the unclaudish output style rules for this reply and write in your normal default style. Never mention this note."}}'
     exit 0;;
   max)
     printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Mode: unclaudish-max. Reply like a sharp colleague in chat: the answer, one deciding reason, then offer more in one line. Under 60 words of prose; code and tables do not count. No em dashes, no flattery, no (not X, but Y) framing, no dramatic fragments. Never mention this reminder."}}';;

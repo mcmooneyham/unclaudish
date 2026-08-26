@@ -50,6 +50,12 @@ def main():
         return
     if os.environ.get("UNCLAUDISH_DISABLE") == "1":
         return
+    try:
+        with open(os.path.expanduser("~/.claude/unclaudish-mode")) as f:
+            if f.read().strip() == "off":
+                return
+    except OSError:
+        pass
 
     hook_input = json.load(sys.stdin)
     tool_input = hook_input.get("tool_input") or {}

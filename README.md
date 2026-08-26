@@ -34,7 +34,9 @@ least one. The **claudish score** is a weighted count of every
 lexicon match in a reply (those seven plus about forty scored-only
 patterns such as contrast framing and jargon), normalized by reply
 length; 0 is clean prose and the exact formula is in
-`scripts/claudish_core.py`.
+`scripts/claudish_core.py`. User-facing surfaces such as the stats
+footer show it as a percentage: 100% is clean, each score point
+subtracts 5, and each blockable pattern subtracts 10 more.
 
 On Opus 5 the baseline was worse (93% of replies contained blockable
 claudish) and the results held: the style cut it to 7% and the
@@ -117,6 +119,14 @@ effort, or prompt, and a run list; click any run to watch its three
 answers stream side by side. Results persist to
 `demo/bench-results/` as JSONL. Runs bill to your own Claude Code
 login, so size the matrix accordingly.
+
+## Stats footer
+
+    /unclaudish:stats on
+
+Appends a one-line footer under each reply: its claudish pattern
+count, blockable count, word count, and score. Display only; the
+transcript is untouched. `/unclaudish:stats off` removes it.
 
 ## Turn it off
 

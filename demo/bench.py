@@ -46,7 +46,8 @@ def run_style_streaming(style, text, model, effort, on_partial):
     command = ["claude", "-p", "--model", model,
                "--output-format", "stream-json",
                "--include-partial-messages", "--verbose",
-               "--tools", "", "--disallowedTools", "mcp__*"]
+               "--tools", "", "--disallowedTools", "mcp__*",
+               "--settings", demo.isolation_settings()]
     if demo.STYLE_PACKS[style]:
         command += ["--plugin-dir", demo.STYLE_PACKS[style]]
     proc = subprocess.Popen(

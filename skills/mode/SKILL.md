@@ -10,8 +10,10 @@ status).
 
 - `on`: the standard plain register (default).
 - `max`: extreme brevity. The answer, one reason, an offer of more.
-- `off`: no per-turn reinforcement (the output style and linter
-  stay active; disable the plugin in /plugin for a full off).
+- `off`: turns off the register: the linters stop checking, the
+  reminder stops, and the output style is countermanded each turn.
+  The stats footer keeps its own switch (/unclaudish:stats).
+  Disable the plugin in /plugin to remove everything.
 - `status`: report the current mode without changing it.
 
 Treat a flag value of `unclaudish` as `on`.
