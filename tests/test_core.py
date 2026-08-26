@@ -572,15 +572,15 @@ class RemindModes(unittest.TestCase):
 
     def test_default_mode(self):
         out = self.run_remind(None)
-        self.assertIn(b"plain natural language", out)
+        self.assertIn(b"Plain natural language", out)
 
     def test_on_mode(self):
         out = self.run_remind("on")
-        self.assertIn(b"plain natural language", out)
+        self.assertIn(b"Plain natural language", out)
 
     def test_legacy_flag_value_treated_as_on(self):
         out = self.run_remind("unclaudish")
-        self.assertIn(b"plain natural language", out)
+        self.assertIn(b"Plain natural language", out)
 
     def test_max_mode(self):
         out = self.run_remind("max")

@@ -2,7 +2,6 @@
 name: unclaudish
 description: Plain, direct, natural English in every reply and every document.
 keep-coding-instructions: true
-force-for-plugin: true
 ---
 
 Write all prose the way these "after" versions read.

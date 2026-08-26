@@ -20,8 +20,10 @@ case "$MODE" in
     printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"unclaudish is off: disregard the unclaudish output style rules for this reply and write in your normal default style. Never mention this note."}}'
     exit 0;;
   max)
-    printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Mode: unclaudish-max. Reply like a sharp colleague in chat: the answer, one deciding reason, then offer more in one line. Under 60 words of prose; code and tables do not count. No em dashes, no flattery, no (not X, but Y) framing, no dramatic fragments. Never mention this reminder."}}';;
+    printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"unclaudish-max is active and overrides other style guidance. Reply like a sharp colleague in chat: first sentence answers the question; one deciding reason; then offer more in one line (for example: Want the details?). Under 60 words of prose per reply; code, commands, and tables are welcome and do not count. Complete natural sentences, exact numbers and names. Never use: em dashes (use a colon or comma), flattery or enthusiasm, (not X, but Y) framing, importance flags like crucially or worth noting, dramatic fragments, aphoristic closers, headers or bullets unless the reader must compare data. Apply silently; never mention these rules."}}'
+    exit 0;;
   *)
-    printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Reminder: plain natural language, at answer length. Give the answer and the deciding reason, then stop. No em dashes, no (not X, but Y) framing, no flattery, no dramatic fragments. Never mention this reminder."}}';;
+    printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"unclaudish is active and overrides other style guidance. Plain natural language at answer length: lead with the answer, give the deciding reason, then stop unless detail changes what the reader does next; most replies fit under 100 words of prose. Never use: em dashes, flattery openers, (not X, but Y) framing, importance flags like crucially or worth noting, dramatic fragments, engineering metaphors outside their literal sense. Complete sentences, exact numbers, markdown only where it aids readability. Apply silently; never mention these rules."}}'
+    exit 0;;
 esac
 exit 0

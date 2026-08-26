@@ -6,24 +6,32 @@ allowed-tools: Bash
 ---
 
 Set the unclaudish mode. The argument is $ARGUMENTS (default:
-status).
+status). Treat a flag value of `unclaudish` as `on`.
 
-- `on`: the standard plain register (default).
+- `on`: the standard plain register.
 - `max`: extreme brevity. The answer, one reason, an offer of more.
-- `off`: turns off the register: the linters stop checking, the
-  reminder stops, and the output style is countermanded each turn.
-  The stats footer keeps its own switch (/unclaudish:stats).
-  Disable the plugin in /plugin to remove everything.
-- `status`: report the current mode without changing it.
+- `off`: linters stop, the reminder stops, the style is
+  countermanded each turn. Stats keeps its own switch.
+- `status`: report the current mode without changing anything.
 
-Treat a flag value of `unclaudish` as `on`.
+To set a mode, do BOTH steps, then confirm in one sentence:
 
-To set a mode, write the flag file and confirm:
+1. Write the flag file (drives the hooks, effective next message):
 
-    echo MODE > ~/.claude/unclaudish-mode
+       echo MODE > ~/.claude/unclaudish-mode
 
-For status, read that file (missing file means `unclaudish`).
+2. Write the output style setting so /config shows it and the full
+   style loads in future sessions. Set STYLE to `unclaudish` for
+   on, `unclaudish-max` for max; for off, use `Default`:
 
-The mode takes effect on the next message. Also adopt the chosen
-register yourself immediately, from this reply onward. Confirm the
-change in one sentence.
+       python3 -c "
+       import json, os
+       p = '.claude/settings.local.json'
+       os.makedirs('.claude', exist_ok=True)
+       s = json.load(open(p)) if os.path.exists(p) else {}
+       s['outputStyle'] = 'STYLE'
+       json.dump(s, open(p, 'w'), indent=2)"
+
+For status, read the flag file (missing means on) and report it.
+Also adopt the chosen register yourself immediately, from this
+reply onward.
