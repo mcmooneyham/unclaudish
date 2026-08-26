@@ -63,7 +63,7 @@ def build_variant(name, style, remind, stop):
         if remind:
             hooks["hooks"]["UserPromptSubmit"] = [{"hooks": [{
                 "type": "command",
-                "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/remind.sh",
+                "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/remind.py",
                 "timeout": 10,
             }]}]
         os.makedirs(os.path.join(root, "hooks"))

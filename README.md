@@ -117,6 +117,11 @@ One benchmark run, same prompt and model, three configurations:
 
     /plugin marketplace add mcmooneyham/unclaudish
     /plugin install unclaudish@unclaudish
+    /reload-plugins
+
+`/reload-plugins` activates it in the session you are already in, so
+you can install mid-project without `/clear` and without losing
+context. The style applies from your next message.
 
 Or try it without installing:
 
@@ -124,18 +129,18 @@ Or try it without installing:
 
 ## Modes and styles
 
-The plain style turns itself on at install: the first session writes
-`outputStyle` into `~/.claude/settings.json`, so every project uses
-it. Switch registers any time:
+The plain style turns itself on at install and writes `outputStyle`
+into `~/.claude/settings.json`, so every project uses it. Switch
+registers any time:
 
     /unclaudish:mode max
     /unclaudish:mode on
     /unclaudish:mode off
 
-The reply register changes with your next message. The full style
-loads after `/clear` or in a new session, which is also when
-`/config` shows the change. Picking a style in `/config` works too:
-the plugin follows whichever you choose.
+A switch is in force from your next message, with no `/clear` and
+no lost context: the turn hook injects the whole style into the
+running session. `/config` catches up in your next session. Picking
+a style in `/config` works too, and the plugin follows it.
 
 `off` turns the register off: linters stop, the reminder stops, and
 the style is countermanded each turn.

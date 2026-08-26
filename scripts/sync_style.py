@@ -137,8 +137,9 @@ def main():
         print("unclaudish mode: %s | output style: %s"
               % (mode, style or "default (none)"))
         if mode != "off":
-            print("Active from your next message; /clear or a new"
-                  " session loads the full style everywhere.")
+            print("In force from your next message. No /clear needed:"
+                  " the turn hook injects the full style. /config"
+                  " catches up in your next session.")
     elif command == "reconcile":
         try:
             sys.stdin.read()  # hook payload is not needed

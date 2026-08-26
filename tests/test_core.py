@@ -553,43 +553,116 @@ class LintFileProcess(unittest.TestCase):
 
 
 class RemindModes(unittest.TestCase):
-    REMIND = os.path.join(REPO_ROOT, "scripts", "remind.sh")
+    """The turn hook is what makes a mode change work without /clear.
 
-    def run_remind(self, mode):
+    First turn under a mode carries the whole style file; later turns
+    carry the short reminder.
+    """
+
+    REMIND = os.path.join(REPO_ROOT, "scripts", "remind.py")
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="remind-home-")
+        self.state = tempfile.mkdtemp(prefix="remind-state-")
+        os.makedirs(os.path.join(self.home, ".claude"))
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+        shutil.rmtree(self.state, ignore_errors=True)
+
+    def run_remind(self, mode, session="s1"):
         env = dict(os.environ)
         env.pop("UNCLAUDISH_DISABLE", None)
-        with tempfile.TemporaryDirectory() as home:
-            env["HOME"] = home
-            if mode is not None:
-                claude_dir = os.path.join(home, ".claude")
-                os.makedirs(claude_dir)
-                with open(os.path.join(claude_dir,
-                                       "unclaudish-mode"), "w") as f:
-                    f.write(mode + "\n")
-            return subprocess.run(["bash", self.REMIND],
-                                  capture_output=True, env=env,
-                                  timeout=10).stdout
+        env["HOME"] = self.home
+        env["TMPDIR"] = self.state
+        mode_path = os.path.join(self.home, ".claude", "unclaudish-mode")
+        if mode is None:
+            if os.path.exists(mode_path):
+                os.unlink(mode_path)
+        else:
+            with open(mode_path, "w") as f:
+                f.write(mode + "\n")
+        payload = json.dumps({"hook_event_name": "UserPromptSubmit",
+                              "session_id": session,
+                              "prompt": "hi"}).encode()
+        out = subprocess.run([sys.executable, self.REMIND],
+                             input=payload, capture_output=True,
+                             env=env, timeout=10).stdout
+        if not out:
+            return ""
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
-    def test_default_mode(self):
-        out = self.run_remind(None)
-        self.assertIn(b"Plain natural language", out)
+    def test_default_mode_injects_the_plain_style(self):
+        text = self.run_remind(None)
+        self.assertIn("The deletion test", text)
 
-    def test_on_mode(self):
-        out = self.run_remind("on")
-        self.assertIn(b"Plain natural language", out)
+    def test_on_mode_injects_the_plain_style(self):
+        text = self.run_remind("on")
+        self.assertIn("The deletion test", text)
 
     def test_legacy_flag_value_treated_as_on(self):
-        out = self.run_remind("unclaudish")
-        self.assertIn(b"Plain natural language", out)
+        text = self.run_remind("unclaudish")
+        self.assertIn("The deletion test", text)
 
-    def test_max_mode(self):
-        out = self.run_remind("max")
-        self.assertIn(b"unclaudish-max", out)
-        self.assertIn(b"Under 60 words", out)
+    def test_max_mode_injects_the_max_style(self):
+        text = self.run_remind("max")
+        self.assertIn("sharp colleague", text)
+
+    def test_later_turns_use_the_short_reminder(self):
+        first = self.run_remind("max")
+        second = self.run_remind("max")
+        self.assertIn("sharp colleague", second)
+        self.assertLess(len(second), len(first))
+        self.assertIn("Under 60 words", second)
+
+    def test_a_mode_change_reinjects_the_full_style(self):
+        self.run_remind("max")
+        self.run_remind("max")
+        switched = self.run_remind("on")
+        self.assertIn("The deletion test", switched)
+
+    def test_each_session_gets_the_full_style_once(self):
+        self.run_remind("max", session="s1")
+        other = self.run_remind("max", session="s2")
+        self.assertIn("sharp colleague", other)
+        self.assertIn("complete rules", other)
 
     def test_off_mode_countermands_style(self):
-        out = self.run_remind("off")
-        self.assertIn(b"disregard the unclaudish output style", out)
+        text = self.run_remind("off")
+        self.assertIn("disregard the unclaudish output style", text)
+        self.assertNotIn("deletion test", text)
+
+    def test_kill_switch_silences_the_hook(self):
+        open(os.path.join(self.home, ".claude",
+                          "unclaudish-off"), "w").close()
+        self.assertEqual(self.run_remind("max"), "")
+
+    def test_frontmatter_is_stripped_from_the_injection(self):
+        text = self.run_remind("on")
+        self.assertNotIn("keep-coding-instructions", text)
+        self.assertNotIn("name: unclaudish", text)
+
+    def test_first_turn_also_writes_the_style_setting(self):
+        # Installing mid-session plus /reload-plugins skips
+        # SessionStart, so the first turn must still sync settings.
+        settings = os.path.join(self.home, ".claude", "settings.json")
+        with open(settings, "w") as f:
+            json.dump({"model": "opus"}, f)
+        self.run_remind("max")
+        with open(settings) as f:
+            self.assertEqual(json.load(f)["outputStyle"],
+                             "unclaudish:unclaudish-max")
+
+    def test_malformed_stdin_still_injects(self):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        env["TMPDIR"] = self.state
+        proc = subprocess.run([sys.executable, self.REMIND],
+                              input=b"not json", capture_output=True,
+                              env=env, timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn(b"unclaudish", proc.stdout)
 
 
 class StatsFooter(unittest.TestCase):

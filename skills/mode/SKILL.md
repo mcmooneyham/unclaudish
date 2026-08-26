@@ -26,6 +26,6 @@ The script writes the mode flag and the `outputStyle` key in
 output in one sentence. Adopt the chosen register yourself
 immediately, from this reply onward.
 
-The register changes with the next message. The full output style
-loads after `/clear` or in a new session, which is also when
-`/config` shows the change.
+The full style is in force from the next message, with no
+`/clear` and no lost context: the turn hook injects it. `/config`
+shows the change in the next session.
