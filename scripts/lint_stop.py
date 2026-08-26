@@ -114,12 +114,33 @@ def build_reason(violations):
     )
 
 
+def record_usage(hook_input):
+    """Log this turn's real token usage for the stats footer.
+
+    Stop runs after Claude Code writes the assistant record, so this is
+    the first place the finished turn's usage can be read. It follows
+    the stats switch, not the mode, so turning the register off does
+    not stop the accounting.
+    """
+    try:
+        import unclaudish_config
+        if not unclaudish_config.stats_enabled():
+            return
+        import usage
+        totals = usage.turn_totals_wait(
+            hook_input.get("transcript_path", ""))
+        usage.record(hook_input.get("session_id"),
+                     hook_input.get("prompt_id"), totals)
+    except Exception:
+        pass
+
+
 def main():
     import unclaudish_config
+    hook_input = json.load(sys.stdin)
+    record_usage(hook_input)
     if unclaudish_config.disabled():
         return
-
-    hook_input = json.load(sys.stdin)
     if hook_input.get("stop_hook_active"):
         return
     prompt_id = str(hook_input.get("prompt_id") or "unknown")

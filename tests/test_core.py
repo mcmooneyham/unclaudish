@@ -8,6 +8,7 @@ source file contains a literal em dash. Run:
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -978,6 +979,13 @@ class StatsFooter(unittest.TestCase):
         self.assertIn("`detected` ", content)
         self.assertIn("em_dash x1", content)
 
+    def test_clean_footer_hides_the_zero_counts(self):
+        footer = self.footer_for("The cache expires after five minutes.",
+                                 "zeros1")
+        self.assertNotIn("blockable", footer)
+        self.assertNotIn("pattern", footer)
+        self.assertIn("100% \u00b7 6 words", footer)
+
     def test_off_means_silent(self):
         proc = self.run_hook(self.event("Hello.", 0, True, "m2"),
                              flag="off")
@@ -989,6 +997,709 @@ class StatsFooter(unittest.TestCase):
                               input=b"not json",
                               capture_output=True, env=env, timeout=10)
         self.assertEqual(proc.returncode, 0)
+
+    def footer_for(self, text, msg):
+        out = self.run_hook(self.event(text, 0, True, msg))
+        return json.loads(out.stdout)["hookSpecificOutput"][
+            "displayContent"]
+
+    def test_clean_reply_scores_100(self):
+        footer = self.footer_for(
+            "The cache expires after five minutes. Tests pass on CI.",
+            "clean1")
+        self.assertIn("100%", footer)
+        self.assertNotIn("`detected`", footer)
+
+    def test_each_blockable_pattern_costs_ten_points(self):
+        # Hard violations do not add to the soft score, so one em dash
+        # takes exactly 10 points off.
+        footer = self.footer_for("The fix" + EM + "shipped clean.",
+                                 "dash1")
+        self.assertIn("1 blockable", footer)
+        self.assertIn("90%", footer)
+
+    def test_soft_patterns_lower_the_score_by_the_formula(self):
+        # The footer must agree with the engine: 100 minus 5 per score
+        # point, minus 10 per blockable pattern.
+        text = ("The rollout was seamless and the pipeline is robust."
+                " We leveraged the framework to unlock a paradigm"
+                " shift, and the architecture is bulletproof and"
+                " production-ready across the board. ") * 4
+        result = cc.evaluate(text)
+        expected = max(0.0, 100.0 - 5.0 * result["score"]
+                       - 10.0 * sum(v["count"]
+                                    for v in result["hard_violations"]))
+        footer = self.footer_for(text, "soft1")
+        self.assertIn("%.0f%%" % expected, footer)
+        self.assertLess(expected, 100)
+
+    def test_score_never_goes_below_zero(self):
+        awful = ((("You're absolutely right! Here" + CURLY + "s the "
+                   "thing: it" + CURLY + "s worth noting the fix"
+                   + EM + "shipped. Crucially, we must delve into "
+                   "the robust, seamless, production-ready core. ")
+                  * 6))
+        footer = self.footer_for(awful, "awful1")
+        self.assertIn("0%", footer)
+
+    def test_word_count_covers_the_whole_message(self):
+        self.run_hook(self.event("one two three ", 0, False, "words1"))
+        footer = self.footer_for_final("four five.", 1, "words1")
+        self.assertIn("5 words", footer)
+
+    def footer_for_final(self, text, index, msg):
+        out = self.run_hook(self.event(text, index, True, msg))
+        return json.loads(out.stdout)["hookSpecificOutput"][
+            "displayContent"]
+
+    def test_chunks_are_assembled_in_index_order(self):
+        # Chunks can be written out of order; the footer must still
+        # evaluate the message as it reads.
+        self.run_hook(self.event("shipped.", 1, False, "order1"))
+        footer = self.footer_for_final("The fix" + EM, 0, "order1")
+        self.assertIn("1 blockable", footer)
+        self.assertIn("em_dash", footer)
+
+    def test_only_the_final_chunk_carries_the_footer(self):
+        first = self.run_hook(self.event("Half a ", 0, False, "part1"))
+        self.assertEqual(first.stdout.strip(), b"")
+
+    def test_display_content_keeps_the_original_delta(self):
+        footer = self.footer_for("Tests pass.", "keep1")
+        self.assertTrue(footer.startswith("Tests pass."))
+
+    def test_blockable_count_reads_as_a_count(self):
+        footer = self.footer_for("The fix" + EM + "shipped clean.",
+                                 "one1")
+        self.assertIn("\u00b7 1 blockable", footer)
+
+    def test_reply_tokens_are_estimated_with_an_up_arrow(self):
+        # The assistant record is written after this hook runs, so the
+        # reply's own output can only be an estimate here.
+        footer = self.footer_for("x" * 400, "est1")
+        self.assertIn("tok: ~100\u2191", footer)
+
+    def write_ledger(self, session, entries):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import usage
+        os.makedirs(usage.LEDGER_ROOT, exist_ok=True)
+        with open(usage.ledger_path(session), "w") as f:
+            json.dump(entries, f)
+        return usage.ledger_path(session)
+
+    def test_thinking_and_cost_come_from_the_ledger(self):
+        session = "ledger-session"
+        path = self.write_ledger(session, {
+            "p1": {"output_tokens": 900, "thinking_tokens": 3200,
+                   "context_tokens": 20000, "cost_usd": 0.0123},
+            "p2": {"output_tokens": 600, "thinking_tokens": 100,
+                   "context_tokens": 31400, "cost_usd": 1.7677}})
+        payload = self.event("Tests pass.", 0, True, "led1")
+        payload["session_id"] = session
+        footer = json.loads(self.run_hook(payload).stdout)[
+            "hookSpecificOutput"]["displayContent"]
+        self.assertIn("100 think", footer)  # newest turn's thinking
+        self.assertIn("$1.77", footer)      # that turn's cost, not the sum
+        self.assertNotIn("$1.78", footer)
+        os.remove(path)
+
+    def test_footer_without_a_ledger_shows_only_the_estimate(self):
+        payload = self.event("Tests pass.", 0, True, "noledger")
+        payload["session_id"] = "session-with-no-ledger"
+        footer = json.loads(self.run_hook(payload).stdout)[
+            "hookSpecificOutput"]["displayContent"]
+        self.assertIn("\u2191", footer)
+        self.assertNotIn("think", footer)
+        self.assertNotIn("$", footer)
+
+    def test_unpriced_session_shows_tokens_without_a_price(self):
+        session = "unpriced-session"
+        path = self.write_ledger(session, {
+            "p1": {"output_tokens": 10, "thinking_tokens": 5000,
+                   "context_tokens": 5000, "cost_usd": None}})
+        payload = self.event("Tests pass.", 0, True, "unpriced1")
+        payload["session_id"] = session
+        footer = json.loads(self.run_hook(payload).stdout)[
+            "hookSpecificOutput"]["displayContent"]
+        self.assertIn("5.0k think", footer)
+        self.assertNotIn("$", footer)
+        os.remove(path)
+
+    def test_evaluated_text_is_kept_for_diagnosis(self):
+        self.footer_for("The fix" + EM + "shipped.", "diag1")
+        found = []
+        for root, _, files in os.walk(
+                os.path.join(tempfile.gettempdir(), "unclaudish-stats")):
+            if "evaluated.txt" in files and root.endswith("diag1"):
+                with open(os.path.join(root, "evaluated.txt")) as f:
+                    found.append(f.read())
+        self.assertTrue(found and EM in found[0])
+
+
+class UsageAccounting(unittest.TestCase):
+    """Estimated tokens at display time, real ones from the ledger."""
+
+    LINT_STOP = LINT_STOP
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import usage
+        self.usage = usage
+        self.tmp = tempfile.mkdtemp(prefix="usage-")
+        self.session = "test-session-%d" % id(self)
+
+    def tearDown(self):
+        path = self.usage.ledger_path(self.session)
+        if os.path.exists(path):
+            os.remove(path)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def transcript(self, entries, name="t.jsonl"):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+        return path
+
+    def assistant(self, out=100, think=0, inp=0, cache=0,
+                  model="claude-sonnet-5"):
+        return {"type": "assistant", "message": {
+            "model": model,
+            "usage": {"output_tokens": out, "input_tokens": inp,
+                      "cache_read_input_tokens": cache,
+                      "output_tokens_details": {"thinking_tokens": think}}}}
+
+    def test_estimate_is_four_characters_per_token(self):
+        self.assertEqual(self.usage.estimate_tokens("x" * 400), 100)
+        self.assertEqual(self.usage.estimate_tokens(""), 0)
+        self.assertEqual(self.usage.estimate_tokens(None), 0)
+
+    def test_cost_uses_the_published_rates(self):
+        # sonnet: 1000 in at $2/Mtok, 10000 cache reads at a tenth of
+        # that, 2000 out at $10/Mtok.
+        cost = self.usage.cost_for("claude-sonnet-5", 1000, 10000, 2000)
+        self.assertAlmostEqual(cost, 0.0240, places=6)
+
+    def test_each_model_family_is_priced(self):
+        for model, expected in (("claude-fable-5", 50.0),
+                                ("claude-opus-5", 25.0),
+                                ("claude-sonnet-5", 10.0),
+                                ("claude-haiku-4-5", 5.0)):
+            cost = self.usage.cost_for(model, 0, 0, 1_000_000)
+            self.assertAlmostEqual(cost, expected, places=6, msg=model)
+
+    def test_unknown_model_has_no_price(self):
+        self.assertIsNone(self.usage.cost_for("some-model", 1, 1, 1))
+
+    def test_turn_totals_sums_the_current_turn_only(self):
+        path = self.transcript([
+            self.assistant(out=500),
+            {"type": "user", "message": {"content": "next prompt"}},
+            self.assistant(out=100, think=20),
+            self.assistant(out=50, think=5),
+        ])
+        totals = self.usage.turn_totals(path)
+        self.assertEqual(totals["output_tokens"], 150)
+        self.assertEqual(totals["thinking_tokens"], 25)
+
+    def test_turn_totals_is_none_before_the_record_lands(self):
+        path = self.transcript([{"type": "attachment"}])
+        self.assertIsNone(self.usage.turn_totals(path))
+
+    def test_turn_totals_is_none_for_a_missing_file(self):
+        self.assertIsNone(self.usage.turn_totals("/nope/none.jsonl"))
+
+    def test_waiting_returns_as_soon_as_the_record_lands(self):
+        path = self.transcript([self.assistant(out=80)])
+        start = time.monotonic()
+        totals = self.usage.turn_totals_wait(path, timeout=2.0)
+        self.assertEqual(totals["output_tokens"], 80)
+        self.assertLess(time.monotonic() - start, 0.5)
+
+    def test_waiting_picks_up_a_late_write(self):
+        # The record can land a moment after Stop fires.
+        import threading
+        path = self.transcript([{"type": "attachment"}], "late.jsonl")
+
+        def append_later():
+            time.sleep(0.15)
+            with open(path, "a") as f:
+                f.write(json.dumps(self.assistant(out=64)) + "\n")
+
+        writer = threading.Thread(target=append_later)
+        writer.start()
+        totals = self.usage.turn_totals_wait(path, timeout=2.0)
+        writer.join()
+        self.assertIsNotNone(totals)
+        self.assertEqual(totals["output_tokens"], 64)
+
+    def test_waiting_gives_up_at_the_timeout(self):
+        path = self.transcript([{"type": "attachment"}], "never.jsonl")
+        start = time.monotonic()
+        self.assertIsNone(
+            self.usage.turn_totals_wait(path, timeout=0.2))
+        self.assertLess(time.monotonic() - start, 1.0)
+
+    def test_compact_numbers(self):
+        self.assertEqual(self.usage.compact(800), "800")
+        self.assertEqual(self.usage.compact(5933), "5.9k")
+        self.assertEqual(self.usage.compact(31400), "31k")
+        self.assertEqual(self.usage.compact(2_400_000), "2.4M")
+        self.assertEqual(self.usage.compact(None), "")
+
+    def test_context_is_the_largest_call_not_the_sum(self):
+        # Every call in a turn re-reads the conversation, so summing
+        # input multiplies the context by the number of calls.
+        path = self.transcript(
+            [{"type": "user", "message": {"content": "hi"}}]
+            + [self.assistant(out=40, inp=300, cache=96000)] * 5)
+        totals = self.usage.turn_totals(path)
+        self.assertEqual(totals["input_tokens"] + totals["cache_read_tokens"],
+                         481500)
+        self.assertEqual(totals["context_tokens"], 96300)
+
+    def test_context_counts_cache_creation_too(self):
+        path = self.transcript([{"type": "assistant", "message": {
+            "model": "claude-sonnet-5",
+            "usage": {"input_tokens": 100, "output_tokens": 10,
+                      "cache_read_input_tokens": 5000,
+                      "cache_creation_input_tokens": 2000}}}])
+        self.assertEqual(
+            self.usage.turn_totals(path)["context_tokens"], 7100)
+
+    def test_last_context_is_the_newest_turn(self):
+        for index, context in enumerate((10000, 20000, 30500)):
+            self.usage.record(self.session, "p%d" % index,
+                              {"output_tokens": 5, "thinking_tokens": 0,
+                               "context_tokens": context, "cost_usd": 0.0})
+        self.assertEqual(
+            self.usage.last_context_tokens(self.session), 30500)
+
+    def test_last_context_is_none_without_a_ledger(self):
+        self.assertIsNone(
+            self.usage.last_context_tokens("no-such-session"))
+
+    def test_last_thinking_is_the_newest_turn(self):
+        for index, thinking in enumerate((900, 40, 2400)):
+            self.usage.record(self.session, "p%d" % index,
+                              {"output_tokens": 5,
+                               "thinking_tokens": thinking,
+                               "context_tokens": 100, "cost_usd": 0.0})
+        self.assertEqual(
+            self.usage.last_thinking_tokens(self.session), 2400)
+
+    def test_money_precision_scales_with_size(self):
+        self.assertEqual(self.usage.money(1.7677), "$1.77")
+        self.assertEqual(self.usage.money(0.2419), "$0.242")
+        self.assertEqual(self.usage.money(0.0066), "$0.0066")
+        self.assertEqual(self.usage.money(None), "")
+
+    def test_last_cost_is_the_newest_turn(self):
+        for index, cost in enumerate((0.5, 0.25, 0.0123)):
+            self.usage.record(self.session, "p%d" % index,
+                              {"output_tokens": 5, "thinking_tokens": 1,
+                               "context_tokens": 10, "cost_usd": cost})
+        self.assertAlmostEqual(
+            self.usage.last_cost(self.session), 0.0123)
+        # The session total still adds every turn.
+        self.assertAlmostEqual(
+            self.usage.session_totals(self.session)["cost_usd"], 0.7623)
+
+    def test_last_cost_is_none_without_a_ledger(self):
+        self.assertIsNone(self.usage.last_cost("no-such-session"))
+
+    def test_last_thinking_is_none_without_a_ledger(self):
+        self.assertIsNone(
+            self.usage.last_thinking_tokens("no-such-session"))
+
+    def test_zero_thinking_is_not_shown_as_a_number(self):
+        self.usage.record(self.session, "p1",
+                          {"output_tokens": 5, "thinking_tokens": 0,
+                           "context_tokens": 100, "cost_usd": 0.0})
+        self.assertEqual(
+            self.usage.last_thinking_tokens(self.session), 0)
+
+    def test_record_then_read_back(self):
+        totals = {"output_tokens": 120, "thinking_tokens": 20,
+                  "cost_usd": 0.001}
+        self.usage.record(self.session, "prompt-1", totals)
+        summary = self.usage.session_totals(self.session)
+        self.assertEqual(summary["turns"], 1)
+        self.assertEqual(summary["output_tokens"], 120)
+        self.assertAlmostEqual(summary["cost_usd"], 0.001)
+
+    def test_a_repeated_prompt_id_does_not_double_count(self):
+        totals = {"output_tokens": 120, "thinking_tokens": 0,
+                  "cost_usd": 0.001}
+        self.usage.record(self.session, "prompt-1", totals)
+        self.usage.record(self.session, "prompt-1", totals)
+        self.assertEqual(
+            self.usage.session_totals(self.session)["turns"], 1)
+
+    def test_totals_accumulate_across_turns(self):
+        for index, tokens in enumerate((100, 250, 60)):
+            self.usage.record(self.session, "p%d" % index,
+                              {"output_tokens": tokens,
+                               "thinking_tokens": 0, "cost_usd": 0.002})
+        summary = self.usage.session_totals(self.session)
+        self.assertEqual(summary["turns"], 3)
+        self.assertEqual(summary["output_tokens"], 410)
+        self.assertAlmostEqual(summary["cost_usd"], 0.006)
+
+    def test_recording_nothing_is_a_no_op(self):
+        self.usage.record(self.session, "p1", None)
+        self.assertEqual(
+            self.usage.session_totals(self.session)["turns"], 0)
+
+    def test_unpriced_turns_leave_the_cost_unset(self):
+        self.usage.record(self.session, "p1",
+                          {"output_tokens": 10, "thinking_tokens": 0,
+                           "cost_usd": None})
+        self.assertIsNone(
+            self.usage.session_totals(self.session)["cost_usd"])
+
+    def test_a_corrupt_ledger_reads_as_empty(self):
+        os.makedirs(self.usage.LEDGER_ROOT, exist_ok=True)
+        with open(self.usage.ledger_path(self.session), "w") as f:
+            f.write("{not json")
+        self.assertEqual(
+            self.usage.session_totals(self.session)["turns"], 0)
+
+    def run_stop(self, payload, home, stats="on"):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = home
+        claude_dir = os.path.join(home, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        with open(os.path.join(claude_dir, "unclaudish-stats"), "w") as f:
+            f.write(stats)
+        return subprocess.run([sys.executable, self.LINT_STOP],
+                              input=json.dumps(payload).encode(),
+                              capture_output=True, env=env, timeout=10)
+
+    def stop_payload(self, path):
+        return {"hook_event_name": "Stop", "session_id": self.session,
+                "prompt_id": "stop-prompt", "stop_hook_active": False,
+                "transcript_path": path,
+                "last_assistant_message": "All tests pass."}
+
+    def test_the_stop_hook_records_the_turn(self):
+        home = tempfile.mkdtemp(prefix="stop-usage-")
+        path = self.transcript([self.assistant(out=300, think=40,
+                                               inp=500, cache=2000)])
+        self.run_stop(self.stop_payload(path), home)
+        summary = self.usage.session_totals(self.session)
+        self.assertEqual(summary["output_tokens"], 300)
+        self.assertIsNotNone(summary["cost_usd"])
+        self.assertEqual(
+            self.usage.last_context_tokens(self.session), 2500)
+        shutil.rmtree(home, ignore_errors=True)
+
+    def test_recording_survives_mode_off(self):
+        # Stats keep their own switch, so the register being off must
+        # not stop the accounting.
+        home = tempfile.mkdtemp(prefix="stop-usage-off-")
+        os.makedirs(os.path.join(home, ".claude"))
+        with open(os.path.join(home, ".claude",
+                               "unclaudish-mode"), "w") as f:
+            f.write("off")
+        path = self.transcript([self.assistant(out=77)])
+        self.run_stop(self.stop_payload(path), home)
+        self.assertEqual(
+            self.usage.session_totals(self.session)["output_tokens"], 77)
+        shutil.rmtree(home, ignore_errors=True)
+
+    def test_nothing_is_recorded_while_stats_are_off(self):
+        home = tempfile.mkdtemp(prefix="stop-usage-nostats-")
+        path = self.transcript([self.assistant(out=42)])
+        self.run_stop(self.stop_payload(path), home, stats="off")
+        self.assertEqual(
+            self.usage.session_totals(self.session)["turns"], 0)
+        shutil.rmtree(home, ignore_errors=True)
+
+    def test_recording_does_not_break_the_linter(self):
+        home = tempfile.mkdtemp(prefix="stop-usage-lint-")
+        path = self.transcript([self.assistant(out=10)])
+        payload = self.stop_payload(path)
+        payload["last_assistant_message"] = ("The fix" + EM
+                                             + " shipped clean.")
+        proc = self.run_stop(payload, home)
+        self.assertIn(b"block", proc.stdout)
+        shutil.rmtree(home, ignore_errors=True)
+
+
+class HookWiring(unittest.TestCase):
+    """Hooks fail open, so a broken command would ship silently."""
+
+    def setUp(self):
+        with open(os.path.join(REPO_ROOT, "hooks", "hooks.json")) as f:
+            self.hooks = json.load(f)["hooks"]
+
+    def commands(self):
+        for event, entries in self.hooks.items():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    yield event, hook
+
+    def resolve(self, command):
+        """Strip ${CLAUDE_PLUGIN_ROOT}, quotes, and any argument."""
+        path = command.replace('"${CLAUDE_PLUGIN_ROOT}"', REPO_ROOT)
+        path = path.replace("${CLAUDE_PLUGIN_ROOT}", REPO_ROOT)
+        return path.split(" ")[0].strip('"')
+
+    def test_every_hook_command_exists(self):
+        for event, hook in self.commands():
+            path = self.resolve(hook["command"])
+            self.assertTrue(os.path.isfile(path),
+                            "%s points at a missing file: %s"
+                            % (event, path))
+
+    def test_every_hook_command_is_executable(self):
+        for event, hook in self.commands():
+            path = self.resolve(hook["command"])
+            self.assertTrue(os.access(path, os.X_OK),
+                            "%s is not executable: %s" % (event, path))
+
+    def test_every_hook_script_compiles(self):
+        for event, hook in self.commands():
+            path = self.resolve(hook["command"])
+            proc = subprocess.run(
+                [sys.executable, "-m", "py_compile", path],
+                capture_output=True, timeout=30)
+            self.assertEqual(proc.returncode, 0,
+                             "%s: %s" % (event, proc.stderr[:300]))
+
+    def test_every_hook_declares_a_timeout(self):
+        for event, hook in self.commands():
+            self.assertIn("timeout", hook, event)
+
+    def test_the_expected_events_are_registered(self):
+        for event in ("SessionStart", "ConfigChange", "UserPromptSubmit",
+                      "SubagentStart", "Stop", "SubagentStop",
+                      "PreToolUse", "MessageDisplay"):
+            self.assertIn(event, self.hooks, event)
+
+    def test_scripts_survive_an_empty_payload(self):
+        # A hook that crashes on empty stdin would break a session.
+        env = dict(os.environ)
+        env["HOME"] = tempfile.mkdtemp(prefix="wiring-home-")
+        os.makedirs(os.path.join(env["HOME"], ".claude"))
+        for event, hook in self.commands():
+            command = hook["command"].replace(
+                '"${CLAUDE_PLUGIN_ROOT}"', REPO_ROOT).replace('"', "")
+            proc = subprocess.run(command.split(), input=b"",
+                                  capture_output=True, env=env,
+                                  timeout=20)
+            self.assertEqual(proc.returncode, 0,
+                             "%s exited %d" % (event, proc.returncode))
+        shutil.rmtree(env["HOME"], ignore_errors=True)
+
+
+class StyleNaming(unittest.TestCase):
+    """A plugin style is selected by <plugin>:<style>, and a wrong
+    name silently selects no style at all."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        with open(os.path.join(REPO_ROOT, ".claude-plugin",
+                               "plugin.json")) as f:
+            self.manifest = json.load(f)
+        self.styles = {}
+        styles_dir = os.path.join(REPO_ROOT, "output-styles")
+        for name in os.listdir(styles_dir):
+            if not name.endswith(".md"):
+                continue
+            with open(os.path.join(styles_dir, name), encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("name:"):
+                        self.styles[line.split(":", 1)[1].strip()] = name
+                        break
+
+    def test_settings_values_match_the_style_files(self):
+        import sync_style
+        plugin = self.manifest["name"]
+        for mode, value in sync_style.STYLES.items():
+            self.assertEqual(value.split(":")[0], plugin, mode)
+            style = value.split(":", 1)[1]
+            self.assertIn(style, self.styles,
+                          "%s names a style no file declares" % mode)
+
+    def test_remind_reads_the_same_style_files(self):
+        import remind
+        for mode, filename in remind.STYLE_FILES.items():
+            path = os.path.join(REPO_ROOT, "output-styles", filename)
+            self.assertTrue(os.path.isfile(path), filename)
+            self.assertTrue(remind.style_body(mode), mode)
+
+    def test_both_styles_are_reachable(self):
+        self.assertEqual(sorted(self.styles),
+                         ["unclaudish", "unclaudish-max"])
+
+    def test_no_style_carries_the_force_flag(self):
+        # force-for-plugin overrides the user's own choice, which makes
+        # the max style unreachable.
+        styles_dir = os.path.join(REPO_ROOT, "output-styles")
+        for filename in self.styles.values():
+            with open(os.path.join(styles_dir, filename),
+                      encoding="utf-8") as f:
+                self.assertNotIn("force-for-plugin", f.read(), filename)
+
+    def test_manifest_declares_the_styles_directory(self):
+        self.assertIn("outputStyles", self.manifest)
+
+
+class SkillCommands(unittest.TestCase):
+    """Each skill tells Claude to run a script; the path it builds has
+    to resolve both from the plugin root and from an install."""
+
+    def skill_bodies(self):
+        skills_dir = os.path.join(REPO_ROOT, "skills")
+        for name in sorted(os.listdir(skills_dir)):
+            path = os.path.join(skills_dir, name, "SKILL.md")
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    yield name, f.read()
+
+    def test_every_skill_has_frontmatter(self):
+        for name, body in self.skill_bodies():
+            self.assertTrue(body.startswith("---"), name)
+            self.assertIn("name: %s" % name, body)
+            self.assertIn("description:", body)
+
+    def test_scripts_named_in_skills_exist(self):
+        for name, body in self.skill_bodies():
+            for script in re.findall(r"scripts/([a-z_]+\.py)", body):
+                self.assertTrue(
+                    os.path.isfile(os.path.join(REPO_ROOT, "scripts",
+                                                script)),
+                    "%s names a missing script: %s" % (name, script))
+
+    def test_the_root_fallback_resolves_an_installed_plugin(self):
+        # The skills locate the script through CLAUDE_PLUGIN_ROOT, with
+        # a glob over the install cache as the fallback.
+        home = tempfile.mkdtemp(prefix="skill-home-")
+        cache = os.path.join(home, ".claude", "plugins", "cache",
+                             "unclaudish", "unclaudish")
+        for version in ("0.1.9", "0.1.10", "0.1.26"):
+            os.makedirs(os.path.join(cache, version, "scripts"))
+            open(os.path.join(cache, version, "scripts",
+                              "sync_style.py"), "w").close()
+        script = ('ROOT="${CLAUDE_PLUGIN_ROOT:-$(ls -d'
+                  ' "$HOME"/.claude/plugins/cache/*/unclaudish/*'
+                  ' 2>/dev/null | sort -V | tail -1)}";'
+                  ' echo "$ROOT"')
+        env = dict(os.environ)
+        env["HOME"] = home
+        env.pop("CLAUDE_PLUGIN_ROOT", None)
+        proc = subprocess.run(["bash", "-c", script], capture_output=True,
+                              env=env, timeout=10)
+        # sort -V picks the newest version, not the lexically last one.
+        self.assertEqual(proc.stdout.decode().strip(),
+                         os.path.join(cache, "0.1.26"))
+        shutil.rmtree(home, ignore_errors=True)
+
+    def test_plugin_root_wins_when_set(self):
+        script = ('ROOT="${CLAUDE_PLUGIN_ROOT:-$(ls -d'
+                  ' "$HOME"/.claude/plugins/cache/*/unclaudish/*'
+                  ' 2>/dev/null | sort -V | tail -1)}";'
+                  ' echo "$ROOT"')
+        env = dict(os.environ)
+        env["CLAUDE_PLUGIN_ROOT"] = REPO_ROOT
+        proc = subprocess.run(["bash", "-c", script], capture_output=True,
+                              env=env, timeout=10)
+        self.assertEqual(proc.stdout.decode().strip(), REPO_ROOT)
+
+
+class ConfigModule(unittest.TestCase):
+    """The single source of truth for every switch."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import unclaudish_config
+        self.config = unclaudish_config
+        self.home = tempfile.mkdtemp(prefix="config-home-")
+        os.makedirs(os.path.join(self.home, ".claude"))
+        self._real_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.home
+        self._reload()
+
+    def tearDown(self):
+        if self._real_home is not None:
+            os.environ["HOME"] = self._real_home
+        os.environ.pop("UNCLAUDISH_DISABLE", None)
+        shutil.rmtree(self.home, ignore_errors=True)
+        self._reload()
+
+    def _reload(self):
+        import importlib
+        importlib.reload(self.config)
+
+    def write(self, name, value):
+        with open(os.path.join(self.home, ".claude", name), "w") as f:
+            f.write(value + "\n")
+
+    def test_mode_defaults_to_on(self):
+        self.assertEqual(self.config.read_mode(), "on")
+
+    def test_mode_default_is_configurable(self):
+        self.assertIsNone(self.config.read_mode(default=None))
+
+    def test_legacy_mode_value_reads_as_on(self):
+        self.write("unclaudish-mode", "unclaudish")
+        self.assertEqual(self.config.read_mode(), "on")
+
+    def test_unknown_mode_falls_back(self):
+        self.write("unclaudish-mode", "banana")
+        self.assertEqual(self.config.read_mode(), "on")
+
+    def test_disabled_follows_mode_off(self):
+        self.assertFalse(self.config.disabled())
+        self.write("unclaudish-mode", "off")
+        self.assertTrue(self.config.disabled())
+
+    def test_env_kill_switch(self):
+        os.environ["UNCLAUDISH_DISABLE"] = "1"
+        self.assertTrue(self.config.killed())
+
+    def test_file_kill_switch(self):
+        open(os.path.join(self.home, ".claude",
+                          "unclaudish-off"), "w").close()
+        self.assertTrue(self.config.killed())
+
+    def test_subagent_setting_defaults_to_mirror(self):
+        self.assertEqual(self.config.subagents_setting(), "mirror")
+
+    def test_subagent_mode_resolution(self):
+        cases = [
+            ("mirror", "max", "max"), ("mirror", "on", "on"),
+            ("on", "max", "on"), ("max", "on", "max"),
+            ("off", "max", None), ("mirror", "off", None),
+            ("max", "off", None),
+        ]
+        for setting, mode, expected in cases:
+            self.write("unclaudish-subagents", setting)
+            self.write("unclaudish-mode", mode)
+            self.assertEqual(self.config.subagent_mode(), expected,
+                             "%s + %s" % (setting, mode))
+
+    def test_stats_switch_is_independent_of_mode(self):
+        self.write("unclaudish-stats", "on")
+        self.write("unclaudish-mode", "off")
+        self.assertTrue(self.config.stats_enabled())
+
+    def test_stats_default_is_off(self):
+        self.assertFalse(self.config.stats_enabled())
+
+    def test_kill_switch_beats_the_stats_flag(self):
+        self.write("unclaudish-stats", "on")
+        os.environ["UNCLAUDISH_DISABLE"] = "1"
+        self.assertFalse(self.config.stats_enabled())
+
+    def test_writes_round_trip(self):
+        self.config.write_mode("max")
+        self.assertEqual(self.config.read_mode(), "max")
+        self.config.write_subagents("max")
+        self.assertEqual(self.config.subagents_setting(), "max")
 
 
 class Robustness(unittest.TestCase):
