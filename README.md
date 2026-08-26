@@ -39,12 +39,14 @@ because answers got shorter and deliberation shrank with them.
    readability. `unclaudish-max` (switch via `/output-style`):
    extreme brevity, the answer plus one reason plus an offer of
    more.
-2. **A style linter on the Stop hook.** A dependency-free Python
-   script checks every final message for seven high-precision
-   patterns (em-dashes, flattery openers, "here's the thing", and
-   similar). On a hit it blocks once with specific feedback, so
-   Claude rewrites before you see it. It fails open: a linter error
-   never blocks your session.
+2. **A style linter.** A dependency-free Python script checks
+   every final message, and every comment or markdown file Claude is
+   about to write, for seven high-precision patterns (em-dashes,
+   flattery openers, "here's the thing", and similar). On a hit it
+   blocks with specific feedback, so Claude rewrites before the text
+   reaches you or your files. Code itself, string literals, moved
+   existing text, and unknown file types are never touched, and it
+   fails open: a linter error never blocks your session.
 3. **A per-turn reminder** so the style holds in long sessions
    (about 35 tokens per turn).
 4. **`/unclaudish:rewrite`**, a skill that rewrites existing text or
@@ -75,18 +77,16 @@ Claude Code login.
 - Or set `UNCLAUDISH_DISABLE=1`
 - Or disable the plugin in `/plugin`
 
-## How it was validated
+## Design guarantees
 
-- 700+ measured eval runs across Sonnet 5 and Opus 5, with a
-  one-line-instruction control arm (the plugin has to beat "just ask
-  it to write plainly", and it does)
-- An adversarial review pass: 44 findings hunted, 12 confirmed, all
-  fixed with regression tests
-- 67 unit tests; zero false-positive blocks across 714 real
-  assistant messages
-- A 10-case meaning-preservation suite for the rewrite skill
-  (negations, conditions, numbers, and stated uncertainty all
-  survive)
+- The numbers above come from a reproducible harness that ships in
+  `eval/`: 7 configurations including a one-line-instruction control
+  arm, 45 runs per arm per model, paired prompts.
+- The linter produced zero false-positive blocks across 714 real
+  assistant messages, and the test suite pins that precision.
+- The rewrite skill preserves meaning: negations, condition stacks,
+  numbers, and stated uncertainty all survive, verified by a
+  dedicated suite in `eval/`.
 
 The linter deliberately blocks on only seven patterns. About 30 more
 scored patterns (from "the real problem" to "survives scrutiny")

@@ -367,6 +367,172 @@ class OfferClosers(unittest.TestCase):
         self.assertIn("aphoristic_closer", cc.evaluate(text)["metrics"])
 
 
+class ResidueMetrics(unittest.TestCase):
+    """Process-residue detection (scored tier, never blocks)."""
+
+    RESIDUE = ("residue_archaeology", "residue_verification",
+               "residue_machinery")
+
+    def found(self, text):
+        metrics = cc.evaluate(text + PAD)["metrics"]
+        return [m for m in self.RESIDUE if m in metrics]
+
+    def test_positives_detected(self):
+        for text in [
+            "An adversarial review pass: 44 findings hunted, 12 "
+            "confirmed, all fixed with regression tests.",
+            "Excluded: 25 runs contaminated by a since-fixed bug.",
+            "The judge panel scored all three drafts.",
+            "Everything is verified end to end and all green.",
+            "All 12 confirmed findings were fixed.",
+        ]:
+            self.assertTrue(self.found(text), text)
+
+    def test_negatives_clean(self):
+        for text in [
+            "0% of the 45 runs contained a blockable pattern.",
+            "Changelog: the parser no longer drops trailing newlines.",
+            "Run python3 tests/test_core.py before sending a PR.",
+            "The green deployment path skips the canary.",
+            "The review found the restaurant charming.",
+            "Retries are attempted 3 times with backoff.",
+        ]:
+            self.assertFalse(self.found(text), text)
+
+    def test_residue_never_blocks(self):
+        text = ("The adversarial review confirmed 12 findings, all "
+                "fixed and verified end to end." + PAD)
+        self.assertEqual(cc.lint_hard(text)["verdict"], "pass")
+
+
+class CommentExtraction(unittest.TestCase):
+    def test_python_comment_and_docstring(self):
+        code = ('def f():\n    """Crucially, this delves into it."""\n'
+                "    x = 1  # the fix" + EM + "as shipped\n")
+        joined = "\n".join(cc.extract_comments(code, ".py"))
+        self.assertIn("Crucially", joined)
+        self.assertIn(EM, joined)
+
+    def test_string_literals_invisible(self):
+        code = 'banner = "# not a comment ' + EM + '"\n'
+        self.assertFalse(
+            any(EM in c for c in cc.extract_comments(code, ".py")))
+        js = 'const u = "https://example.com/x"; // ok\n'
+        joined = "\n".join(cc.extract_comments(js, ".js"))
+        self.assertNotIn("example.com", joined)
+
+    def test_shebang_skipped(self):
+        comments = cc.extract_comments(
+            "#!/usr/bin/env python3\nx = 1\n", ".py")
+        self.assertFalse(any("usr/bin" in c for c in comments))
+
+    def test_slash_languages(self):
+        code = "/* You're absolutely right */\nlet a; // b" + EM + "c\n"
+        for ext in (".js", ".swift", ".go", ".rs"):
+            joined = "\n".join(cc.extract_comments(code, ext))
+            self.assertIn("absolutely right", joined)
+            self.assertIn(EM, joined)
+
+    def test_unknown_types_skipped(self):
+        for ext in (".yaml", ".json", ".html", ".css", ""):
+            self.assertEqual(
+                cc.extract_comments("# x " + EM, ext), [])
+
+
+class LintFileProcess(unittest.TestCase):
+    """Contract tests for the PreToolUse file linter."""
+
+    LINT_FILE = os.path.join(REPO_ROOT, "scripts", "lint_file.py")
+
+    def setUp(self):
+        shutil.rmtree(os.path.join(tempfile.gettempdir(),
+                                   "unclaudish-state"),
+                      ignore_errors=True)
+
+    def run_hook(self, payload):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        return subprocess.run(
+            [sys.executable, self.LINT_FILE],
+            input=json.dumps(payload).encode() if isinstance(
+                payload, dict) else payload,
+            capture_output=True, env=env, timeout=10)
+
+    def hook_payload(self, path, content, prompt="p1"):
+        return {"hook_event_name": "PreToolUse", "tool_name": "Write",
+                "prompt_id": prompt,
+                "tool_input": {"file_path": path, "content": content}}
+
+    def test_denies_claudish_comment(self):
+        proc = self.run_hook(self.hook_payload(
+            "/tmp/x.py", "x = 1  # the fix" + EM + "as shipped\n"))
+        self.assertEqual(proc.returncode, 0)
+        out = json.loads(proc.stdout)
+        self.assertEqual(
+            out["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_allows_clean_code_with_dash_in_string(self):
+        proc = self.run_hook(self.hook_payload(
+            "/tmp/x.py", 'sep = "' + EM + '"  # separator constant\n'))
+        self.assertEqual(proc.stdout.strip(), b"")
+
+    def test_denies_claudish_markdown(self):
+        proc = self.run_hook(self.hook_payload(
+            "/tmp/README.md", "You're absolutely right" + EM + "done."))
+        self.assertIn(b"deny", proc.stdout)
+
+    def test_allows_unknown_filetype(self):
+        proc = self.run_hook(self.hook_payload(
+            "/tmp/data.yaml", "note: a" + EM + "b\n"))
+        self.assertEqual(proc.stdout.strip(), b"")
+
+    def test_deny_cap_prevents_wedging(self):
+        payload = self.hook_payload(
+            "/tmp/x.py", "# a" + EM + "b\n", "p9")
+        first = self.run_hook(payload)
+        second = self.run_hook(payload)
+        third = self.run_hook(payload)
+        self.assertIn(b"deny", first.stdout)
+        self.assertIn(b"deny", second.stdout)
+        self.assertEqual(third.stdout.strip(), b"")
+
+    def test_edit_new_string_checked(self):
+        payload = {"hook_event_name": "PreToolUse",
+                   "tool_name": "Edit", "prompt_id": "p2",
+                   "tool_input": {"file_path": "/tmp/x.js",
+                                  "old_string": "let a;",
+                                  "new_string": "let a; // b" + EM + "c"}}
+        proc = self.run_hook(payload)
+        self.assertIn(b"deny", proc.stdout)
+
+    def test_moved_existing_text_not_denied(self):
+        import tempfile as tf
+        with tf.NamedTemporaryFile("w", suffix=".py", delete=False,
+                                   encoding="utf-8") as f:
+            f.write("# It is important to note that Karr defines "
+                    "all sums\nx = 1\n")
+            path = f.name
+        try:
+            payload = self.hook_payload(
+                path, "y = 2\n# It is important to note that Karr "
+                "defines all sums\n")
+            proc = self.run_hook(payload)
+            self.assertEqual(proc.stdout.strip(), b"",
+                             "moved text was denied")
+            payload2 = self.hook_payload(
+                path, "# It is important to note the cache is new\n")
+            proc2 = self.run_hook(payload2)
+            self.assertIn(b"deny", proc2.stdout)
+        finally:
+            os.unlink(path)
+
+    def test_fail_open_on_garbage(self):
+        for payload in (b"", b"not json", b"[]"):
+            proc = self.run_hook(payload)
+            self.assertEqual(proc.returncode, 0)
+            self.assertEqual(proc.stdout.strip(), b"")
+
+
 class Robustness(unittest.TestCase):
     def test_fuzz_never_raises(self):
         rng = random.Random(42)

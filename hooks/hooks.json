@@ -1,5 +1,5 @@
 {
-  "description": "Unclaudish: lint the final message for claudish patterns on Stop (block once with feedback), and inject a one-line plain-language reminder each turn.",
+  "description": "Unclaudish: lint the final message on Stop and file comments/prose on PreToolUse (deny with feedback so Claude revises), plus a one-line plain-language reminder each turn.",
   "hooks": {
     "Stop": [
       {
@@ -20,6 +20,19 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/remind.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_file.py",
+            "timeout": 10,
+            "statusMessage": "Checking file writing style"
           }
         ]
       }

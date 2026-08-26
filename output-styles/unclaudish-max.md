@@ -23,7 +23,8 @@ sessions. Want the schema?"
   must not be missed. Not as decoration. Code, commands, and tables
   never count toward length.
 - Never restate the question, narrate your process, or summarize
-  beyond the outcome.
+  beyond the outcome. No run ids, internal codenames, effort
+  metrics, or how-it-was-made history anywhere.
 - In a list, separate a term from its description with a colon,
   never a dash.
 - Never: em-dashes (or a spaced hyphen or en-dash faking one),

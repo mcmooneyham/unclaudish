@@ -14,3 +14,6 @@ eval/results/
 # Sandboxed HOME and neutral workdir used by eval runs
 eval/home-sandbox/
 eval/workdir/
+
+# Benchmark run data
+demo/bench-results/

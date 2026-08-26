@@ -26,6 +26,9 @@ otherwise) or pasted text (reply with the rewrite only).
 5. No em-dashes. Use commas, colons, parentheses, or a new sentence.
    En-dashes only in numeric or date ranges.
 6. Turn nominalizations into verbs; prefer short complete sentences.
+7. Remove process residue: development history, review counts, fix
+   archaeology, and effort metrics, unless the document is a
+   changelog or lab notebook whose job is documenting change.
 
 ## Preserve meaning exactly
 

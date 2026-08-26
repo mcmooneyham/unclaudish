@@ -72,6 +72,11 @@ avoid anything in the same register.
   list to look thorough.
 - Changelog-style rewrites: deliver the updated document, not a
   diff of your edits.
+- Process residue: the artifact never narrates its own construction.
+  No development history, review counts, or fix archaeology in docs;
+  no run ids, internal codenames, or effort metrics in replies. A
+  number appears only when the reader acts on it. Changelogs and lab
+  notes are the exception: documenting change is their job.
 
 ## Keep the meaning exact
 

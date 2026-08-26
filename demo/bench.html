@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unclaudish Benchmark</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --paper:#FAFAF8; --ink:#22211E; --muted:#6E6A61; --line:#E4E1D8;
+  --mark:#B0342A; --mark-soft:#F6E7E5; --ok:#3E7C4F; --ok-soft:#E7F0E9;
+  --data:#4A6FA5; --data-soft:#E9EEF6; --card:#FFFFFF; --code:#F1EFE9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#1B1A18; --ink:#E9E6DF; --muted:#A29C8F; --line:#37342E;
+    --mark:#E07A70; --mark-soft:#3A2523; --ok:#7FB58D; --ok-soft:#24332A;
+    --data:#8FADD6; --data-soft:#232B38; --card:#232220; --code:#2A2926;
+  }
+}
+* { box-sizing:border-box; }
+body { background:var(--paper); color:var(--ink); margin:0;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5;
+  padding:2.5rem 1.25rem 4rem; }
+main { max-width:80rem; margin:0 auto; }
+h1 { font-family:"Source Serif 4",Georgia,serif; font-size:2rem;
+  margin:0 0 .3rem; }
+h2 { font-family:"Source Serif 4",Georgia,serif; font-size:1.2rem;
+  margin:1.8rem 0 .4rem; }
+.lede { color:var(--muted); margin:0 0 1.2rem; max-width:50rem; }
+fieldset { border:1px solid var(--line); border-radius:8px;
+  background:var(--card); padding:.8rem 1rem; margin:0 0 .8rem; }
+legend { font-size:.72rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); padding:0 .4rem; }
+label.opt { display:inline-flex; gap:.35rem; align-items:center;
+  margin:.15rem .8rem .15rem 0; font-size:.88rem; }
+input[type=number] { width:5rem; font:inherit; padding:.3rem .5rem;
+  border:1px solid var(--line); border-radius:6px;
+  background:var(--card); color:var(--ink); }
+button.go, button.stop { font:inherit; font-weight:600; border:none;
+  border-radius:6px; padding:.5rem 1.4rem; cursor:pointer; }
+button.go { background:var(--ok); color:#fff; }
+button.stop { background:var(--mark); color:#fff; }
+button:disabled { opacity:.45; cursor:default; }
+.status { color:var(--muted); font-size:.85rem; margin-left:.6rem; }
+.progress { height:.5rem; background:var(--line); border-radius:999px;
+  overflow:hidden; margin:.8rem 0 1.4rem; }
+.progress div { height:100%; background:var(--ok); width:0;
+  transition:width .4s; }
+.panels { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+@media (max-width:900px) { .panels { grid-template-columns:1fr; } }
+.panel { background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:.9rem 1rem; }
+.panel select { font:inherit; font-size:.82rem; padding:.25rem .4rem;
+  border:1px solid var(--line); border-radius:6px; margin:0 .4rem
+  .5rem 0; background:var(--card); color:var(--ink); }
+table { border-collapse:collapse; width:100%; font-size:.82rem; }
+th { text-align:left; font-size:.66rem; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--muted);
+  padding:.28rem .5rem; border-bottom:2px solid var(--line); }
+td { padding:.3rem .5rem; border-bottom:1px solid var(--line); }
+td.n { font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums; }
+tr.clickable { cursor:pointer; }
+tr.clickable:hover td { background:var(--data-soft); }
+.state { font-family:"IBM Plex Mono",monospace; font-size:.7rem;
+  padding:.1rem .55rem; border-radius:999px; }
+.state.pending { background:var(--line); color:var(--muted); }
+.state.running { background:var(--data-soft); color:var(--data); }
+.state.completed { background:var(--ok-soft); color:var(--ok); }
+.state.failed, .state.skipped { background:var(--mark-soft);
+  color:var(--mark); }
+.tiles { display:grid; grid-template-columns:repeat(5, 1fr);
+  gap:1rem; margin:.4rem 0 1rem; }
+@media (max-width:1100px) { .tiles {
+  grid-template-columns:repeat(3, 1fr); } }
+@media (max-width:700px) { .tiles {
+  grid-template-columns:repeat(2, 1fr); } }
+.info { display:inline-flex; align-items:center;
+  justify-content:center; width:.95rem; height:.95rem;
+  border-radius:50%; border:1px solid var(--muted);
+  color:var(--muted); font-size:.62rem; font-weight:600;
+  margin-left:.3rem; cursor:help; position:relative;
+  vertical-align:middle; }
+.info .tip { display:none; position:absolute; bottom:130%; left:50%;
+  transform:translateX(-50%); width:15rem; background:var(--ink);
+  color:var(--paper); font-size:.72rem; line-height:1.4;
+  letter-spacing:0; text-transform:none; padding:.5rem .6rem;
+  border-radius:6px; z-index:60; }
+.info:hover .tip, .info:focus .tip { display:block; }
+.tile { background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:.8rem 1rem; }
+.tile .label { font-size:.68rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); }
+.tile .big { font-family:"IBM Plex Mono",monospace; font-size:1.9rem;
+  font-weight:600; color:var(--ok); line-height:1.15;
+  font-variant-numeric:tabular-nums; }
+.tile .big.bad { color:var(--mark); }
+.tile .supp { font-size:.76rem; color:var(--muted);
+  font-variant-numeric:tabular-nums; }
+.armpick { margin:.2rem 0 .6rem; }
+.armpick button { font-family:"IBM Plex Mono",monospace;
+  font-size:.72rem; border:1px solid var(--line); background:none;
+  color:var(--muted); border-radius:999px; padding:.15rem .7rem;
+  cursor:pointer; margin-right:.35rem; }
+.armpick button.active { background:var(--ok-soft); color:var(--ok);
+  border-color:var(--ok); font-weight:600; }
+.patternnote { color:var(--muted); font-size:.84rem;
+  max-width:56rem; margin:.6rem 0 0; }
+#overlay { display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.45); z-index:40; }
+#detail { display:none; position:fixed; z-index:50; inset:3rem 4vw;
+  overflow-y:auto; background:var(--card); border:1px solid
+  var(--line); border-radius:10px; padding:1.1rem 1.4rem;
+  box-shadow:0 18px 60px rgba(0,0,0,.3); }
+@media (max-width:900px) { #detail { inset:1rem 2vw; } }
+#detail .cols { display:grid; grid-template-columns:1fr 1fr 1fr;
+  gap:1rem; }
+@media (max-width:1000px) { #detail .cols {
+  grid-template-columns:1fr; } }
+.col { border:1px solid var(--line); border-radius:6px;
+  padding:.7rem .8rem; min-width:0; }
+.col h3 { font-size:.72rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 .4rem;
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  display:flex; justify-content:space-between; }
+.col .stat { font-family:"IBM Plex Mono",monospace; font-size:.68rem;
+  color:var(--data); text-transform:none; }
+.chips { margin:0 0 .5rem; }
+.pchip { display:inline-block; font-family:"IBM Plex Mono",monospace;
+  font-size:.66rem; background:var(--data-soft); color:var(--data);
+  border-radius:999px; padding:.08rem .5rem; margin:.08rem .12rem; }
+.pchip.hard { background:var(--mark-soft); color:var(--mark); }
+.out { font-size:.85rem; max-height:26rem; overflow-y:auto;
+  overflow-wrap:break-word; }
+.out p { margin:.4rem 0; }
+.out ul, .out ol { margin:.35rem 0; padding-left:1.3rem; }
+.out code { font-family:"IBM Plex Mono",monospace; font-size:.9em;
+  background:var(--code); padding:.03rem .3rem; border-radius:3px; }
+.out pre { background:var(--code); padding:.6rem .7rem;
+  border-radius:6px; overflow-x:auto; }
+.out pre code { background:none; }
+.mdt { overflow-x:auto; margin:.4rem 0; }
+.out table td, .out table th { border:1px solid var(--line); }
+.task { color:var(--muted); font-size:.84rem; margin:.3rem 0 .8rem;
+  white-space:pre-wrap; max-height:9rem; overflow-y:auto; }
+.close { float:right; font:inherit; background:none; border:1px solid
+  var(--line); border-radius:6px; cursor:pointer; color:var(--muted);
+  padding:.15rem .6rem; }
+.runwrap { max-height:30rem; overflow-y:auto; border:1px solid
+  var(--line); border-radius:8px; background:var(--card); }
+</style>
+</head>
+<body>
+<main>
+<h1>Unclaudish Benchmark</h1>
+<p class="lede">Every selected prompt runs through every selected
+model at every selected effort level, N times, answered three ways
+each (no plugin, unclaudish, unclaudish-max). Statistics update live;
+click any run for its full detail.</p>
+
+<fieldset><legend>Prompts (none checked = all)</legend>
+  <span id="promptopts"></span></fieldset>
+<fieldset><legend>Models</legend><span id="modelopts">
+  <label class="opt"><input type="checkbox" value="claude-sonnet-5" checked>Sonnet 5</label>
+  <label class="opt"><input type="checkbox" value="claude-opus-5">Opus 5</label>
+  <label class="opt"><input type="checkbox" value="claude-fable-5">Fable 5</label>
+  <label class="opt"><input type="checkbox" value="haiku">Haiku 4.5</label>
+</span></fieldset>
+<fieldset><legend>Effort levels</legend><span id="effortopts">
+  <label class="opt"><input type="checkbox" value="default" checked>Default</label>
+  <label class="opt"><input type="checkbox" value="low">Low</label>
+  <label class="opt"><input type="checkbox" value="medium">Medium</label>
+  <label class="opt"><input type="checkbox" value="high">High</label>
+  <label class="opt"><input type="checkbox" value="xhigh">Extra-high</label>
+</span></fieldset>
+<fieldset><legend>Runs</legend>
+  <label class="opt">Runs per combination
+    <input type="number" id="runs" value="3" min="1" max="20"></label>
+  <label class="opt">Parallel cells (each runs 3 model calls at once)
+    <input type="number" id="workers" value="2" min="1" max="4"></label>
+  <button class="go" id="start">Start benchmark</button>
+  <button class="stop" id="stop" disabled>Stop</button>
+  <span class="status" id="status"></span>
+</fieldset>
+
+<div class="progress"><div id="bar"></div></div>
+
+<h2>Statistics</h2>
+<div class="armpick" id="armpick">
+  <button data-arm="unclaudish" class="active">vs unclaudish</button>
+  <button data-arm="max">vs unclaudish-max</button>
+</div>
+<div class="tiles" id="tiles"></div>
+<div class="panel" id="panelA"></div>
+<p class="patternnote">A <strong>pattern</strong> is one match of the
+plugin's claudish lexicon in a reply: an em-dash, a flattery opener,
+"not X, but Y" framing, jargon such as "load-bearing", and about
+forty more. <strong>Blockable</strong> patterns are the seven
+high-precision ones the plugin's linter rejects outright; the rest
+only count toward the score. Fewer is better; the tiles above compare
+the chosen style against the no-plugin baseline on the current
+filter.</p>
+
+<div id="overlay"></div>
+
+<div id="detail"></div>
+
+<h2>Runs</h2>
+<div class="runwrap"><table id="runs-table"></table></div>
+
+<script>
+const el = id => document.getElementById(id);
+const ARMS = ['baseline', 'unclaudish', 'max'];
+const ARMLABEL = {baseline: 'No plugin', unclaudish: 'unclaudish',
+                  max: 'unclaudish-max'};
+let CELLS = [];
+let POLLING = null;
+
+async function loadPresets() {
+  const presets = await (await fetch('/presets')).json();
+  el('promptopts').innerHTML = presets.map(p =>
+    `<label class="opt"><input type="checkbox" value="${p.id}">` +
+    `${p.archetype}</label>`).join('');
+}
+
+function checked(container) {
+  return [...el(container).querySelectorAll('input:checked')]
+    .map(i => i.value);
+}
+
+async function start() {
+  const body = {
+    prompts: checked('promptopts'),
+    models: checked('modelopts'),
+    efforts: checked('effortopts'),
+    runs: parseInt(el('runs').value, 10),
+    workers: parseInt(el('workers').value, 10),
+  };
+  const res = await fetch('/start', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  const data = await res.json();
+  if (data.error) { el('status').textContent = data.error; return; }
+  el('start').disabled = true;
+  el('stop').disabled = false;
+  if (!POLLING) POLLING = setInterval(poll, 2000);
+  poll();
+}
+
+async function stop() {
+  await fetch('/stop', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: '{}'});
+}
+
+function mean(list) {
+  const xs = list.filter(x => x != null);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
+function fmt(x, digits) {
+  return x == null ? '' : x.toFixed(digits == null ? 0 : digits);
+}
+
+function facetSelect(id, label, values, current) {
+  return `<label>${label} <select data-facet="${id}">` +
+    `<option value="">All</option>` +
+    values.map(v => `<option value="${v}"` +
+      (v === current ? ' selected' : '') + `>${v}</option>`).join('') +
+    '</select></label>';
+}
+
+const PANEL_STATE = {A: {}};
+let TILE_ARM = 'unclaudish';
+
+el('armpick').querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    TILE_ARM = b.dataset.arm;
+    el('armpick').querySelectorAll('button').forEach(x =>
+      x.classList.toggle('active', x === b));
+    renderTiles();
+  });
+});
+
+function filteredCells() {
+  const sel = PANEL_STATE.A;
+  return CELLS.filter(c =>
+    (!sel.model || c.model === sel.model)
+    && (!sel.effort || c.effort === sel.effort)
+    && (!sel.prompt || c.prompt_id === sel.prompt));
+}
+
+function tile(label, value, supp, bad) {
+  return `<div class="tile"><div class="label">${label}</div>` +
+    `<div class="big${bad ? ' bad' : ''}">${value}</div>` +
+    `<div class="supp">${supp}</div></div>`;
+}
+
+function renderTiles() {
+  const cells = filteredCells();
+  const base = cells.map(c => c.arms.baseline).filter(Boolean);
+  const plug = cells.map(c => c.arms[TILE_ARM]).filter(Boolean);
+  if (!base.length || !plug.length) {
+    el('tiles').innerHTML = tile('Waiting for results',
+      '...', 'tiles fill as paired runs finish', false)
+      .repeat(1);
+    return;
+  }
+  function reduction(metric, digits) {
+    const b = mean(base.map(r => r[metric]));
+    const p = mean(plug.map(r => r[metric]));
+    if (b == null || p == null || b === 0) return null;
+    return {pct: 100 * (b - p) / b, b, p, digits: digits || 0};
+  }
+  function redTile(label, r, unit) {
+    if (!r) return tile(label, '...', '', false);
+    const bad = r.pct < 0;
+    return tile(label,
+      (r.pct >= 0 ? '-' : '+') + Math.abs(r.pct).toFixed(0) + '%',
+      `${r.b.toFixed(r.digits)} to ${r.p.toFixed(r.digits)} ${unit}`,
+      bad);
+  }
+  const baseBlock = 100 * base.filter(
+    r => r.hard_violations > 0).length / base.length;
+  const plugBlock = 100 * plug.filter(
+    r => r.hard_violations > 0).length / plug.length;
+  const blockInfo = '<span class="info" tabindex="0">?' +
+    '<span class="tip">The seven patterns the plugin\'s linter ' +
+    'refuses outright: em-dashes, flattery openers like ' +
+    '"You\'re absolutely right", "here\'s the thing", ' +
+    '"worth noting", "crucially", and "delve into". This tile shows ' +
+    'the share of replies containing at least one.</span></span>';
+  const blockTile = tile('Blockable claudish' + blockInfo,
+    baseBlock > 0 && plugBlock === 0 ? 'gone'
+      : plugBlock.toFixed(0) + '%',
+    `${baseBlock.toFixed(0)}% of baseline replies to ` +
+    `${plugBlock.toFixed(0)}%`, plugBlock > baseBlock);
+  const costR = reduction('cost_usd', 4);
+  const costTile = costR
+    ? tile('Cost per answer',
+        (costR.pct >= 0 ? '-' : '+') +
+        Math.abs(costR.pct).toFixed(0) + '%',
+        `$${costR.b.toFixed(4)} to $${costR.p.toFixed(4)}`,
+        costR.pct < 0)
+    : tile('Cost per answer', '...', '', false);
+  el('tiles').innerHTML =
+    redTile('Output tokens', reduction('output_tokens'), 'tokens')
+    + redTile('Response time', reduction('seconds', 1), 's')
+    + redTile('Reply length', reduction('words'), 'words')
+    + costTile
+    + blockTile;
+}
+
+function renderPanel(name) {
+  const panel = el('panel' + name);
+  const sel = PANEL_STATE[name];
+  const filtered = CELLS.filter(c =>
+    (!sel.model || c.model === sel.model)
+    && (!sel.effort || c.effort === sel.effort)
+    && (!sel.prompt || c.prompt_id === sel.prompt));
+  const models = [...new Set(CELLS.map(c => c.model))];
+  const efforts = [...new Set(CELLS.map(c => c.effort))];
+  const prompts = [...new Set(CELLS.map(c => c.prompt_id))];
+  const finishedArms = ARMS.reduce((n, a) => n + filtered.filter(
+    c => c.arms[a]).length, 0);
+  let html = facetSelect('model', 'Model', models, sel.model)
+    + facetSelect('effort', 'Effort', efforts, sel.effort)
+    + facetSelect('prompt', 'Prompt', prompts, sel.prompt)
+    + ` <span class="status">${finishedArms} finished answers` +
+    ` across ${filtered.length} runs</span>`;
+  html += '<table><tr><th rowspan="2">Answer</th>' +
+    '<th colspan="4">Averages per answer</th>' +
+    '<th colspan="4">Totals</th>' +
+    '<th rowspan="2">Blockable %</th>' +
+    '<th rowspan="2">In flight</th></tr>' +
+    '<tr><th>Patterns</th><th>Words</th><th>Out-tok</th>' +
+    '<th>Secs</th><th>Patterns</th><th>Words</th>' +
+    '<th>Out-tok</th><th>Cost $</th></tr>';
+  const sum = list => list.filter(x => x != null)
+    .reduce((a, b) => a + b, 0);
+  for (const arm of ARMS) {
+    const rows = filtered.map(c => c.arms[arm]).filter(Boolean);
+    const inflight = filtered.filter(c =>
+      c.live && c.live[arm] && c.live[arm].status === 'running');
+    const liveWords = inflight.reduce((n, c) =>
+      n + (c.live[arm].partial_words || 0), 0);
+    const flight = inflight.length
+      ? `${inflight.length} running, ${liveWords} words so far` : '';
+    const blockPct = rows.length ? 100 * rows.filter(
+      r => r.hard_violations > 0).length / rows.length : null;
+    html += `<tr><td>${ARMLABEL[arm]}</td>` +
+      `<td class="n">${fmt(mean(rows.map(r => r.patterns)), 1)}</td>` +
+      `<td class="n">${fmt(mean(rows.map(r => r.words)))}</td>` +
+      `<td class="n">${fmt(mean(rows.map(r => r.output_tokens)))}</td>` +
+      `<td class="n">${fmt(mean(rows.map(r => r.seconds)), 1)}</td>` +
+      `<td class="n">${fmt(sum(rows.map(r => r.patterns)))}</td>` +
+      `<td class="n">${fmt(sum(rows.map(r => r.words)))}</td>` +
+      `<td class="n">${fmt(sum(rows.map(r => r.output_tokens)))}</td>` +
+      `<td class="n">${fmt(sum(rows.map(r => r.cost_usd)), 4)}</td>` +
+      `<td class="n">${fmt(blockPct)}</td>` +
+      `<td class="n" style="color:var(--data)">${flight}</td>` +
+      '</tr>';
+  }
+  html += '</table>';
+  panel.innerHTML = html;
+  panel.querySelectorAll('select').forEach(s => {
+    s.addEventListener('change', () => {
+      PANEL_STATE[name][s.dataset.facet] = s.value || null;
+      renderPanel(name);
+    });
+  });
+}
+
+function renderRuns() {
+  let html = '<tr><th>Prompt</th><th>Model</th><th>Effort</th>' +
+    '<th>Run</th><th>State</th><th>Plugin patterns</th>' +
+    '<th>Baseline patterns</th></tr>';
+  for (const c of CELLS) {
+    const u = c.arms.unclaudish, b = c.arms.baseline;
+    const liveNote = c.status === 'running' && c.live
+      ? ' ' + ARMS.filter(a => c.live[a]
+          && c.live[a].status === 'running').length + '/3 streaming'
+      : '';
+    html += `<tr class="clickable" data-id="${c.id}">` +
+      `<td>${c.prompt_id}</td><td>${c.model}</td>` +
+      `<td>${c.effort}</td><td class="n">${c.run}</td>` +
+      `<td><span class="state ${c.status}">${c.status}` +
+      `${liveNote}</span></td>` +
+      `<td class="n">${u ? u.patterns : ''}</td>` +
+      `<td class="n">${b ? b.patterns : ''}</td></tr>`;
+  }
+  el('runs-table').innerHTML = html;
+  el('runs-table').querySelectorAll('tr.clickable').forEach(row => {
+    row.addEventListener('click', () => openDetail(row.dataset.id));
+  });
+}
+
+function chips(breakdown) {
+  if (!breakdown) return '';
+  return breakdown.length ? breakdown.map(b =>
+    `<span class="pchip${b.hard ? ' hard' : ''}">${b.id} ` +
+    `x${b.count}</span>`).join('')
+    : '<span class="pchip" style="opacity:.55">clean</span>';
+}
+
+let DETAIL_ID = null;
+let DETAIL_TIMER = null;
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function armPanel(arm, data) {
+  const r = data.arms[arm];
+  const live = data.live[arm] || {};
+  let head, body, chipsHtml = '';
+  if (r) {
+    head = `${r.patterns} patterns, ${r.words} words, ${r.seconds}s`;
+    chipsHtml = chips(r.breakdown);
+    body = r.html || escapeHtml(r.text || '');
+  } else if (live.status === 'running') {
+    const think = live.thinking_chars
+      ? ` (${live.thinking_chars} thinking chars)` : '';
+    head = 'streaming' + think;
+    body = live.partial
+      ? '<div style="white-space:pre-wrap">'
+        + escapeHtml(live.partial) + '<span class="pchip">...</span>'
+        + '</div>'
+      : '<div class="pchip">thinking...</div>';
+  } else if (live.status === 'failed') {
+    head = 'failed';
+    body = escapeHtml(data.error || 'run failed');
+  } else {
+    head = 'pending';
+    body = '<span class="pchip" style="opacity:.55">queued</span>';
+  }
+  return `<div class="col"><h3>${ARMLABEL[arm]} ` +
+    `<span class="stat">${head}</span></h3>` +
+    `<div class="chips">${chipsHtml}</div>` +
+    `<div class="out">${body}</div></div>`;
+}
+
+async function refreshDetail() {
+  if (!DETAIL_ID) return;
+  const data = await (await fetch(
+    '/run/' + encodeURIComponent(DETAIL_ID))).json();
+  if (data.error) return;
+  const cols = ARMS.map(a => armPanel(a, data)).join('');
+  el('detail').innerHTML =
+    `<button class="close" id="closedetail">Close</button>` +
+    `<h2>${data.prompt_id} : ${data.model} : ${data.effort} : ` +
+    `run ${data.run} <span class="state ${data.status}">` +
+    `${data.status}</span></h2>` +
+    `<div class="task">${escapeHtml(data.prompt)}</div>` +
+    `<div class="cols">${cols}</div>`;
+  el('detail').style.display = 'block';
+  el('overlay').style.display = 'block';
+  el('closedetail').addEventListener('click', closeDetail);
+  if (data.status === 'completed' || data.status === 'failed'
+      || data.status === 'skipped') {
+    clearInterval(DETAIL_TIMER);
+    DETAIL_TIMER = null;
+  }
+}
+
+function closeDetail() {
+  el('detail').style.display = 'none';
+  el('overlay').style.display = 'none';
+  DETAIL_ID = null;
+  clearInterval(DETAIL_TIMER);
+  DETAIL_TIMER = null;
+}
+el('overlay').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
+
+async function openDetail(id) {
+  DETAIL_ID = id;
+  clearInterval(DETAIL_TIMER);
+  await refreshDetail();
+  DETAIL_TIMER = setInterval(refreshDetail, 1500);
+}
+
+async function poll() {
+  const data = await (await fetch('/state')).json();
+  CELLS = data.cells;
+  const total = CELLS.length;
+  const done = CELLS.filter(c => c.status === 'completed'
+                            || c.status === 'failed'
+                            || c.status === 'skipped').length;
+  el('bar').style.width = total ? (100 * done / total) + '%' : '0';
+  el('status').textContent = data.status === 'idle' ? ''
+    : `${data.status}: ${done}/${total} runs`;
+  renderTiles();
+  renderPanel('A');
+  renderRuns();
+  if (data.status === 'done' || data.status === 'stopped') {
+    el('start').disabled = false;
+    el('stop').disabled = true;
+  }
+}
+
+el('start').addEventListener('click', start);
+el('stop').addEventListener('click', stop);
+loadPresets();
+poll();
+</script>
+</main>
+</body>
+</html>

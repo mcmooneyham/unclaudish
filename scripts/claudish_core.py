@@ -431,6 +431,57 @@ REGEX_METRICS = [
             r"\bwiring\b|\bwired? (?:up|in|into|through)\b", re.I),
     },
     {
+        # Process residue: the artifact narrating its own construction.
+        # Validated against a labeled corpus before shipping; scored
+        # only, since audience decides (a changelog may say "fixed").
+        "id": "residue_archaeology",
+        "tier": "soft",
+        "weight": 2.0,
+        "cap": 3.0,
+        "pattern": re.compile(
+            r"\bsince-fixed\b"
+            r"|\ball (?:\d+ )?(?:\w+ )?(?:bugs?|findings?|issues?) "
+            r"(?:were )?fixed\b"
+            r"|\bfindings? (?:hunted|confirmed)\b"
+            r"|\bre-ran? (?:after|once) (?:we|I|the)\b"
+            r"|\b(?:fix(?:ed|es)?|patched) "
+            r"(?:mid|during)[- ](?:test|eval|review|development)\b"
+            r"|\b(?:was|were) (?:contaminated|invalidated) by\b"
+            r"|\badversarial review\b",
+            re.I,
+        ),
+    },
+    {
+        "id": "residue_verification",
+        "tier": "soft",
+        "weight": 1.5,
+        "cap": 3.0,
+        "pattern": re.compile(
+            r"\bverified end[- ]to[- ]end\b"
+            r"|\ball (?:tests? )?green\b"
+            r"|\btested and (?:working|verified|confirmed)\b"
+            r"|\b(?:thoroughly|extensively|rigorously) "
+            r"(?:tested|validated|reviewed)\b"
+            r"|\bverified on \d+ runs?\b",
+            re.I,
+        ),
+    },
+    {
+        "id": "residue_machinery",
+        "tier": "soft",
+        "weight": 1.5,
+        "cap": 3.0,
+        "pattern": re.compile(
+            r"\bjudge panel\b"
+            r"|\b(?:spawned|fanned out) \d+ (?:agents?|workers?)\b"
+            r"|\bthe (?:workflow|subagent|orchestrator) "
+            r"(?:ran|completed|returned|found)\b"
+            r"|\b(?:an?|the) agents? "
+            r"(?:found|flagged|confirmed|hunted)\b",
+            re.I,
+        ),
+    },
+    {
         "id": "rhetorical_pivot",
         "tier": "soft",
         "weight": 1.0,
@@ -677,6 +728,46 @@ def evaluate(text, tiers=("hard", "soft")):
 def lint_hard(text):
     """Blocking-linter entry: hard tier only."""
     return evaluate(text, tiers=("hard",))
+
+
+# ---------------------------------------------------------------------------
+# Comment extraction for the file linter
+# ---------------------------------------------------------------------------
+# Only file types with well-understood comment syntax; anything else
+# is skipped so the extractor can never misfire on unknown formats.
+
+HASH_COMMENT_EXTS = (".py", ".rb", ".sh", ".bash", ".zsh", ".pl")
+SLASH_COMMENT_EXTS = (".js", ".jsx", ".ts", ".tsx", ".swift", ".kt",
+                      ".java", ".go", ".c", ".h", ".cpp", ".hpp",
+                      ".rs", ".scala", ".cs")
+PROSE_EXTS = (".md", ".rst", ".txt")
+
+_DOCSTRING_RE = re.compile(r'"""(.*?)"""|\'\'\'(.*?)\'\'\'', re.S)
+_HASH_LINE_RE = re.compile(r"(?m)#(?!!)([^\n]*)$")
+_BLOCK_COMMENT_RE = re.compile(r"/\*(.*?)\*/", re.S)
+_SLASH_LINE_RE = re.compile(r"(?m)(?<!:)//([^\n]*)$")
+_STRING_RE = re.compile(
+    r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\''
+    r"|`(?:[^`\\]|\\.)*`")
+
+
+def extract_comments(content, ext):
+    """Return the comment text spans of a code file, or [] for file
+    types the extractor does not understand."""
+    if ext in HASH_COMMENT_EXTS:
+        docstrings = []
+        if ext == ".py":
+            docstrings = [g for m in _DOCSTRING_RE.finditer(content)
+                          for g in m.groups() if g]
+        stripped = _STRING_RE.sub('""', content)
+        return docstrings + [m.group(1) for m in
+                             _HASH_LINE_RE.finditer(stripped)]
+    if ext in SLASH_COMMENT_EXTS:
+        stripped = _STRING_RE.sub('""', content)
+        out = [m.group(1) for m in _BLOCK_COMMENT_RE.finditer(stripped)]
+        out += [m.group(1) for m in _SLASH_LINE_RE.finditer(stripped)]
+        return out
+    return []
 
 
 if __name__ == "__main__":
