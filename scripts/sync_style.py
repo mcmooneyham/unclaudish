@@ -26,33 +26,26 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import unclaudish_config
+
 STYLES = {
     "on": "unclaudish:unclaudish",
     "max": "unclaudish:unclaudish-max",
 }
 OUR_STYLES = {value: key for key, value in STYLES.items()}
-CLAUDE_DIR = os.path.expanduser("~/.claude")
-MODE_FILE = os.path.join(CLAUDE_DIR, "unclaudish-mode")
+CLAUDE_DIR = unclaudish_config.CLAUDE_DIR
 SETTINGS_FILE = os.path.join(CLAUDE_DIR, "settings.json")
-KILL_SWITCH = os.path.join(CLAUDE_DIR, "unclaudish-off")
 
 
 def read_mode():
     """Current mode, or None when no flag file exists."""
-    try:
-        with open(MODE_FILE) as handle:
-            raw = handle.read().strip().lower()
-    except OSError:
-        return None
-    if raw == "unclaudish":  # legacy spelling of "on"
-        return "on"
-    return raw if raw in ("on", "max", "off") else None
+    return unclaudish_config.read_mode(default=None)
 
 
 def write_mode(mode):
-    os.makedirs(CLAUDE_DIR, exist_ok=True)
-    with open(MODE_FILE, "w") as handle:
-        handle.write(mode + "\n")
+    unclaudish_config.write_mode(mode)
 
 
 def read_settings():
@@ -122,10 +115,8 @@ def reconcile():
 def main():
     args = sys.argv[1:]
     command = args[0] if args else "status"
-    if os.path.exists(KILL_SWITCH) or \
-            os.environ.get("UNCLAUDISH_DISABLE") == "1":
-        if command == "reconcile":
-            return
+    if unclaudish_config.killed() and command == "reconcile":
+        return
     if command == "set":
         mode = (args[1] if len(args) > 1 else "").lower()
         if mode == "unclaudish":
@@ -149,8 +140,14 @@ def main():
     else:
         mode = read_mode() or "on"
         data = read_settings() or {}
-        print("unclaudish mode: %s | output style: %s"
-              % (mode, data.get("outputStyle") or "default (none)"))
+        inherit = unclaudish_config.subagents_setting()
+        if inherit == "mirror":
+            inherit = "mirror (%s)" % (
+                unclaudish_config.subagent_mode() or "nothing")
+        print("unclaudish mode: %s | output style: %s |"
+              " subagents: %s"
+              % (mode, data.get("outputStyle") or "default (none)",
+                 inherit))
 
 
 if __name__ == "__main__":

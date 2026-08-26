@@ -16,22 +16,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-FLAG = os.path.expanduser("~/.claude/unclaudish-stats")
-KILL_SWITCH = os.path.expanduser("~/.claude/unclaudish-off")
 BUFFER_ROOT = os.path.join(tempfile.gettempdir(), "unclaudish-stats")
 BUFFER_MAX_AGE = 6 * 3600
 
 
 def enabled():
-    if os.path.exists(KILL_SWITCH):
-        return False
-    if os.environ.get("UNCLAUDISH_DISABLE") == "1":
-        return False
-    try:
-        with open(FLAG) as f:
-            return f.read().strip() == "on"
-    except OSError:
-        return False
+    import unclaudish_config
+    return unclaudish_config.stats_enabled()
 
 
 def safe(name):

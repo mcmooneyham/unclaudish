@@ -21,7 +21,6 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-KILL_SWITCH = os.path.expanduser("~/.claude/unclaudish-off")
 STATE_DIR = os.path.join(tempfile.gettempdir(), "unclaudish-state")
 MAX_DENIALS_PER_CONTENT = 2
 
@@ -46,16 +45,9 @@ def bump_denials(prompt_id, digest):
 
 
 def main():
-    if os.path.exists(KILL_SWITCH):
+    import unclaudish_config
+    if unclaudish_config.disabled():
         return
-    if os.environ.get("UNCLAUDISH_DISABLE") == "1":
-        return
-    try:
-        with open(os.path.expanduser("~/.claude/unclaudish-mode")) as f:
-            if f.read().strip() == "off":
-                return
-    except OSError:
-        pass
 
     hook_input = json.load(sys.stdin)
     tool_input = hook_input.get("tool_input") or {}
@@ -111,24 +103,19 @@ def main():
         return
 
     where = "comments" if ext not in PROSE_EXTS else "text"
-    lines = [
+    from claudish_core import format_violations
+    reason = format_violations(
+        result["hard_violations"],
         "The %s in this %s contain writing patterns this project"
         " forbids:" % (where, file_path or "file"),
-    ]
-    for violation in result["hard_violations"]:
-        example = violation["snippets"][0] if violation["snippets"] else ""
-        lines.append('- %s (%d): "%s". Fix: %s.'
-                     % (violation["id"], violation["count"], example,
-                        violation["advice"]))
-    lines.append(
         "Revise only the flagged wording and retry the same edit."
         " Keep the code and all facts identical. Do not mention"
-        " this check."
+        " this check.",
     )
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": "\n".join(lines),
+        "permissionDecisionReason": reason,
     }}))
 
 

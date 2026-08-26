@@ -151,6 +151,24 @@ a style in `/config` works too, and the plugin follows it.
 `off` turns the register off: linters stop, the reminder stops, and
 the style is countermanded each turn.
 
+## Subagents and workflow agents
+
+They behave like the main session: the same style text is injected
+into each agent as it starts, and their answers go through the same
+linter with the same patterns and the same feedback.
+
+    /unclaudish:subagents mirror   # session's register (default)
+    /unclaudish:subagents on       # always the plain style
+    /unclaudish:subagents max      # always the max style
+    /unclaudish:subagents off      # their own register, no linting
+
+A requested return format, such as JSON a workflow expects, is never
+overridden. Files an agent writes are checked by the linter whatever
+this is set to, and `/unclaudish:mode off` silences agents too.
+
+Measured on one prompt, with the agent writing its own answer to a
+file: 57 words with inheritance on, 420 with it off.
+
 ## Stats footer
 
     /unclaudish:stats on

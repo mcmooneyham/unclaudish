@@ -730,6 +730,18 @@ def lint_hard(text):
     return evaluate(text, tiers=("hard",))
 
 
+def format_violations(violations, lead, tail):
+    """One feedback format for every hook that rejects writing."""
+    lines = [lead]
+    for violation in violations:
+        example = violation["snippets"][0] if violation["snippets"] else ""
+        lines.append('- %s (%d): "%s". Fix: %s.'
+                     % (violation["id"], violation["count"], example,
+                        violation["advice"]))
+    lines.append(tail)
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Comment extraction for the file linter
 # ---------------------------------------------------------------------------

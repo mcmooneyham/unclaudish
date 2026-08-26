@@ -1,5 +1,5 @@
 {
-  "description": "Unclaudish: lint the final message on Stop and file comments/prose on PreToolUse (deny with feedback so Claude revises), reinforce the register each turn, and keep the output style setting in sync at session start.",
+  "description": "Unclaudish: lint the final message on Stop and file comments/prose on PreToolUse (deny with feedback so Claude revises), reinforce the register each turn and in every subagent, and keep the output style setting in sync.",
   "hooks": {
     "SessionStart": [
       {
@@ -34,6 +34,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/subagent_style.py inject",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -42,6 +53,18 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_stop.py",
             "timeout": 15,
             "statusMessage": "Checking writing style"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/lint_subagent.py",
+            "timeout": 15,
+            "statusMessage": "Checking agent writing style"
           }
         ]
       }

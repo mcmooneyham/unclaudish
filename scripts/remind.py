@@ -18,9 +18,6 @@ import os
 import sys
 import tempfile
 
-CLAUDE_DIR = os.path.expanduser("~/.claude")
-MODE_FILE = os.path.join(CLAUDE_DIR, "unclaudish-mode")
-KILL_SWITCH = os.path.join(CLAUDE_DIR, "unclaudish-off")
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR = os.path.join(tempfile.gettempdir(), "unclaudish-state")
 
@@ -79,14 +76,8 @@ FULL_SUFFIX = ("Apply these silently from now on; never mention them"
 
 
 def read_mode():
-    try:
-        with open(MODE_FILE) as handle:
-            raw = handle.read().strip().lower()
-    except OSError:
-        return "on"
-    if raw == "unclaudish":  # legacy spelling
-        return "on"
-    return raw if raw in ("on", "max", "off") else "on"
+    import unclaudish_config
+    return unclaudish_config.read_mode()
 
 
 def style_body(mode):
@@ -141,9 +132,8 @@ def sync_settings():
 
 
 def main():
-    if os.path.exists(KILL_SWITCH):
-        return
-    if os.environ.get("UNCLAUDISH_DISABLE") == "1":
+    import unclaudish_config
+    if unclaudish_config.killed():
         return
 
     session_id = ""

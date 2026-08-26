@@ -665,6 +665,280 @@ class RemindModes(unittest.TestCase):
         self.assertIn(b"unclaudish", proc.stdout)
 
 
+class SubagentInheritance(unittest.TestCase):
+    """Subagents get the style through SubagentStart, not the turn hook."""
+
+    SUB = os.path.join(REPO_ROOT, "scripts", "subagent_style.py")
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="sub-home-")
+        self.claude_dir = os.path.join(self.home, ".claude")
+        os.makedirs(self.claude_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def write_flag(self, name, value):
+        with open(os.path.join(self.claude_dir, name), "w") as f:
+            f.write(value + "\n")
+
+    def run_sub(self, *args, env_extra=None):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        if env_extra:
+            env.update(env_extra)
+        payload = json.dumps({"hook_event_name": "SubagentStart",
+                              "session_id": "s1"}).encode()
+        return subprocess.run([sys.executable, self.SUB] + list(args),
+                              input=payload, capture_output=True,
+                              env=env, timeout=10).stdout
+
+    def context_for(self, *args, **kwargs):
+        out = self.run_sub(*args, **kwargs)
+        if not out:
+            return ""
+        parsed = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(parsed["hookEventName"], "SubagentStart")
+        return parsed["additionalContext"]
+
+    def test_inherits_the_plain_style_by_default(self):
+        text = self.context_for("inject")
+        self.assertIn("The deletion test", text)
+
+    def test_inherits_the_max_style_in_max_mode(self):
+        self.write_flag("unclaudish-mode", "max")
+        text = self.context_for("inject")
+        self.assertIn("sharp colleague", text)
+
+    def test_structured_returns_are_protected(self):
+        text = self.context_for("inject")
+        self.assertIn("specific return format", text)
+
+    def test_setting_off_silences_the_hook(self):
+        self.write_flag("unclaudish-subagents", "off")
+        self.assertEqual(self.context_for("inject"), "")
+
+    def test_no_is_accepted_as_off(self):
+        self.write_flag("unclaudish-subagents", "no")
+        self.assertEqual(self.context_for("inject"), "")
+
+    def test_mirror_follows_the_session_mode(self):
+        self.write_flag("unclaudish-subagents", "mirror")
+        self.write_flag("unclaudish-mode", "max")
+        self.assertIn("sharp colleague", self.context_for("inject"))
+        self.write_flag("unclaudish-mode", "on")
+        self.assertIn("The deletion test", self.context_for("inject"))
+
+    def test_mirror_is_the_default_with_no_flag_file(self):
+        self.write_flag("unclaudish-mode", "max")
+        self.assertIn("sharp colleague", self.context_for("inject"))
+
+    def test_on_pins_the_plain_style_in_a_max_session(self):
+        self.write_flag("unclaudish-subagents", "on")
+        self.write_flag("unclaudish-mode", "max")
+        text = self.context_for("inject")
+        self.assertIn("The deletion test", text)
+        self.assertNotIn("sharp colleague", text)
+
+    def test_max_pins_the_max_style_in_a_plain_session(self):
+        self.write_flag("unclaudish-subagents", "max")
+        self.write_flag("unclaudish-mode", "on")
+        text = self.context_for("inject")
+        self.assertIn("sharp colleague", text)
+        self.assertNotIn("The deletion test", text)
+
+    def test_mode_off_beats_a_pinned_setting(self):
+        self.write_flag("unclaudish-subagents", "max")
+        self.write_flag("unclaudish-mode", "off")
+        self.assertEqual(self.context_for("inject"), "")
+
+    def test_setting_names_the_style_without_claiming_the_session(self):
+        # A pinned setting can differ from the session, so the note
+        # must not tell the agent what the session is using.
+        self.write_flag("unclaudish-subagents", "max")
+        self.write_flag("unclaudish-mode", "on")
+        opening = self.context_for("inject").splitlines()[0]
+        self.assertNotIn("session", opening)
+        self.assertIn("unclaudish-max", opening)
+
+    def test_mode_off_silences_the_hook(self):
+        self.write_flag("unclaudish-mode", "off")
+        self.assertEqual(self.context_for("inject"), "")
+
+    def test_kill_switch_silences_the_hook(self):
+        open(os.path.join(self.claude_dir, "unclaudish-off"), "w").close()
+        self.assertEqual(self.context_for("inject"), "")
+
+    def test_env_disable_silences_the_hook(self):
+        self.assertEqual(
+            self.context_for("inject",
+                             env_extra={"UNCLAUDISH_DISABLE": "1"}), "")
+
+    def test_set_writes_each_setting(self):
+        flag = os.path.join(self.claude_dir, "unclaudish-subagents")
+        for value, expected in (("off", "off"), ("max", "max"),
+                                ("on", "on"), ("mirror", "mirror"),
+                                ("yes", "mirror"), ("no", "off")):
+            self.run_sub("set", value)
+            with open(flag) as f:
+                self.assertEqual(f.read().strip(), expected, value)
+
+    def test_status_resolves_what_mirror_means_right_now(self):
+        self.write_flag("unclaudish-subagents", "mirror")
+        self.write_flag("unclaudish-mode", "max")
+        self.assertIn(b"currently max", self.run_sub("status"))
+
+    def test_bad_argument_is_rejected_without_writing(self):
+        self.run_sub("set", "maybe")
+        self.assertFalse(os.path.exists(
+            os.path.join(self.claude_dir, "unclaudish-subagents")))
+
+    def test_hook_registered_for_subagent_start(self):
+        with open(os.path.join(REPO_ROOT, "hooks", "hooks.json")) as f:
+            hooks = json.load(f)["hooks"]
+        command = hooks["SubagentStart"][0]["hooks"][0]["command"]
+        self.assertIn("subagent_style.py inject", command)
+
+    def test_injected_text_is_the_session_style_verbatim(self):
+        # Parity: agents must get the same rules, not a paraphrase.
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import remind
+        text = self.context_for("inject")
+        self.assertIn(remind.style_body("on"), text)
+
+
+class SubagentLinting(unittest.TestCase):
+    """SubagentStop mirrors Stop, minus structured return values."""
+
+    LINT = os.path.join(REPO_ROOT, "scripts", "lint_subagent.py")
+    BAD = ("It's worth noting that the cache never expires."
+           " Here's the thing: nobody owns the alert.")
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="sublint-home-")
+        self.state = tempfile.mkdtemp(prefix="sublint-state-")
+        os.makedirs(os.path.join(self.home, ".claude"))
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+        shutil.rmtree(self.state, ignore_errors=True)
+
+    def write_flag(self, name, value):
+        with open(os.path.join(self.home, ".claude", name), "w") as f:
+            f.write(value + "\n")
+
+    def run_hook(self, message, agent_id="a1", stop_hook_active=False,
+                 env_extra=None):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        env["TMPDIR"] = self.state
+        if env_extra:
+            env.update(env_extra)
+        payload = json.dumps({
+            "hook_event_name": "SubagentStop",
+            "agent_id": agent_id,
+            "agent_type": "general-purpose",
+            "stop_hook_active": stop_hook_active,
+            "agent_transcript_path": "",
+            "last_assistant_message": message,
+        }).encode()
+        return subprocess.run([sys.executable, self.LINT], input=payload,
+                              capture_output=True, env=env,
+                              timeout=10).stdout
+
+    def test_blocks_hard_patterns_in_prose(self):
+        out = self.run_hook(self.BAD)
+        decision = json.loads(out)
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("worth_noting", decision["reason"])
+        self.assertIn("heres_the_thing", decision["reason"])
+
+    def test_blocks_an_em_dash(self):
+        out = self.run_hook("The deploy is fine" + EM + "the retry is not.")
+        self.assertIn("em_dash", json.loads(out)["reason"])
+
+    def test_blocks_only_once_per_agent(self):
+        self.assertIn(b"block", self.run_hook(self.BAD))
+        self.assertEqual(self.run_hook(self.BAD), b"")
+
+    def test_a_second_agent_is_still_checked(self):
+        self.run_hook(self.BAD, agent_id="a1")
+        self.assertIn(b"block", self.run_hook(self.BAD, agent_id="a2"))
+
+    def test_stop_hook_active_prevents_a_loop(self):
+        self.assertEqual(
+            self.run_hook(self.BAD, stop_hook_active=True), b"")
+
+    def test_clean_prose_passes(self):
+        self.assertEqual(
+            self.run_hook("The cache never expires and nobody owns"
+                          " the alert."), b"")
+
+    def test_json_return_is_never_blocked(self):
+        self.assertEqual(
+            self.run_hook(json.dumps({"answer": self.BAD})), b"")
+
+    def test_fenced_json_return_is_never_blocked(self):
+        self.assertEqual(
+            self.run_hook('```json\n{"answer": "%s"}\n```' % self.BAD), b"")
+
+    def test_json_array_return_is_never_blocked(self):
+        self.assertEqual(self.run_hook('[{"a": 1}, {"b": 2}]'), b"")
+
+    def test_inheritance_off_disables_linting(self):
+        self.write_flag("unclaudish-subagents", "off")
+        self.assertEqual(self.run_hook(self.BAD), b"")
+
+    def test_every_active_setting_still_lints(self):
+        for value in ("mirror", "on", "max"):
+            self.write_flag("unclaudish-subagents", value)
+            self.assertIn(b"block",
+                          self.run_hook(self.BAD, agent_id="a-" + value),
+                          value)
+
+    def test_mode_off_disables_linting(self):
+        self.write_flag("unclaudish-mode", "off")
+        self.assertEqual(self.run_hook(self.BAD), b"")
+
+    def test_kill_switch_disables_linting(self):
+        open(os.path.join(self.home, ".claude",
+                          "unclaudish-off"), "w").close()
+        self.assertEqual(self.run_hook(self.BAD), b"")
+
+    def test_env_disable_disables_linting(self):
+        self.assertEqual(
+            self.run_hook(self.BAD,
+                          env_extra={"UNCLAUDISH_DISABLE": "1"}), b"")
+
+    def test_malformed_input_fails_open(self):
+        env = dict(os.environ)
+        env["HOME"] = self.home
+        env["TMPDIR"] = self.state
+        proc = subprocess.run([sys.executable, self.LINT],
+                              input=b"not json", capture_output=True,
+                              env=env, timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout, b"")
+
+    def test_uses_the_same_engine_as_the_main_linter(self):
+        # Parity: identical text, identical verdict and violation ids.
+        import lint_stop
+        main_reason = lint_stop.build_reason(
+            cc.lint_hard(self.BAD)["hard_violations"])
+        agent_reason = json.loads(self.run_hook(self.BAD))["reason"]
+        for line in main_reason.splitlines():
+            if line.startswith("- "):
+                self.assertIn(line, agent_reason)
+
+    def test_hook_registered_for_subagent_stop(self):
+        with open(os.path.join(REPO_ROOT, "hooks", "hooks.json")) as f:
+            hooks = json.load(f)["hooks"]
+        command = hooks["SubagentStop"][0]["hooks"][0]["command"]
+        self.assertIn("lint_subagent.py", command)
+
+
 class StatsFooter(unittest.TestCase):
     SHOW_STATS = os.path.join(REPO_ROOT, "scripts", "show_stats.py")
 
@@ -989,6 +1263,7 @@ class StyleSync(unittest.TestCase):
         self.write_settings({"outputStyle": "unclaudish:unclaudish"})
         proc = self.run_sync("status")
         self.assertIn(b"unclaudish:unclaudish", proc.stdout)
+        self.assertIn(b"subagents: mirror", proc.stdout)
         self.assertFalse(os.path.exists(self.mode_file))
 
     def test_hooks_registered_for_startup_and_config_change(self):

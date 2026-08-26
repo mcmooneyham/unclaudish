@@ -18,16 +18,19 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-KILL_SWITCH = os.path.expanduser("~/.claude/unclaudish-off")
 STATE_DIR = os.path.join(tempfile.gettempdir(), "unclaudish-state")
 STATE_MAX_AGE_SECONDS = 24 * 3600
 
 
-def read_final_turn_text(transcript_path, last_assistant_message):
+def read_final_turn_text(transcript_path, last_assistant_message,
+                         skip_sidechain=True):
     """Full final-turn text: assistant text blocks collected backward
     until a real user prompt (string content). Falls back to
     last_assistant_message, which probes showed holds only the segment
-    after the last tool call."""
+    after the last tool call.
+
+    A subagent's own transcript marks its entries as sidechain, so the
+    subagent linter passes skip_sidechain=False to read them."""
     collected = []
     try:
         # Bounded tail read: transcripts can reach tens of MB, and the
@@ -50,7 +53,7 @@ def read_final_turn_text(transcript_path, last_assistant_message):
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if entry.get("isSidechain"):
+            if skip_sidechain and entry.get("isSidechain"):
                 continue
             entry_type = entry.get("type")
             if entry_type == "user":
@@ -100,36 +103,21 @@ def mark_blocked(prompt_id):
 
 
 def build_reason(violations):
-    lines = [
+    from claudish_core import format_violations
+    return format_violations(
+        violations,
         "Your final message contains writing patterns this project"
         " forbids. Rewrite the message in plain natural language,"
         " keeping every fact, number, name, and caveat unchanged:",
-    ]
-    for violation in violations:
-        example = violation["snippets"][0] if violation["snippets"] else ""
-        lines.append(
-            '- %s (%d): "%s". Fix: %s.'
-            % (violation["id"], violation["count"], example,
-               violation["advice"])
-        )
-    lines.append(
         "Only restyle the same content. Do not add or drop information,"
-        " and do not mention this check or that you rewrote anything."
+        " and do not mention this check or that you rewrote anything.",
     )
-    return "\n".join(lines)
 
 
 def main():
-    if os.path.exists(KILL_SWITCH):
+    import unclaudish_config
+    if unclaudish_config.disabled():
         return
-    if os.environ.get("UNCLAUDISH_DISABLE") == "1":
-        return
-    try:
-        with open(os.path.expanduser("~/.claude/unclaudish-mode")) as f:
-            if f.read().strip() == "off":
-                return
-    except OSError:
-        pass
 
     hook_input = json.load(sys.stdin)
     if hook_input.get("stop_hook_active"):
