@@ -73,17 +73,17 @@ Or try it without installing:
 
 ## Choosing a style
 
-Installing the plugin applies `unclaudish` automatically, unless
-you have explicitly chosen an output style before; an explicit
-choice always wins. Check with `/output-style`, and pick a style
-directly at any time:
+Installing the plugin applies `unclaudish` automatically (it
+overrides any previously selected style while the plugin is
+enabled). To use `unclaudish-max` instead, or to switch styles at
+any time, run `/config` and pick under **Output style**, or set it
+in a settings file:
 
-    /output-style unclaudish
-    /output-style unclaudish-max
+    { "outputStyle": "unclaudish-max" }
 
-Pick any other style to turn the register off while keeping the
-linter and reminder active. Style changes take effect in new
-sessions (or after /clear).
+Picking any non-plugin style turns the register off while keeping
+the linter and reminder active. Styles load at session start, so
+changes take effect after `/clear` or a new session.
 
 ## Live demo
 
