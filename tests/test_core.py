@@ -137,8 +137,16 @@ class FalsePositiveTraps(unittest.TestCase):
         self.assert_clean("The blast radius of the outage was one shard, "
                           "a known footgun in the SRE runbook.")
 
-    def test_genuine_concession_not_blocked(self):
-        self.assert_clean("You're right, the limit is 100, not 1000.")
+    def test_concession_leads_with_the_fact(self):
+        # The bare agreement opener blocks like the intensified one:
+        # a concession states the fact first.
+        self.assertIn("syco_opener",
+                      hard_ids("You're right, the limit is 100, not 1000."))
+        self.assert_clean("The limit is 100, not 1000. You had that right.")
+
+    def test_right_that_is_an_answer_not_an_opener(self):
+        self.assert_clean(
+            "You're right that WAL isolates readers, so keep SQLite.")
 
     def test_quoted_mention_not_flagged(self):
         self.assert_clean(
@@ -273,10 +281,18 @@ class SoftTierScoring(unittest.TestCase):
         self.assertGreater(cc.evaluate(claudish)["score"],
                            cc.evaluate(plain)["score"])
 
-    def test_bold_term_list_detected(self):
+    def test_bold_lead_sentence_list_detected(self):
+        text = ("- **Speed is a non-issue.** The queue is small.\n"
+                "- **Cost is a non-issue.** One system, not two.\n"
+                "- **Risk is a non-issue.** Rollback is a flag.\n" + PAD)
+        self.assertIn("bold_term_list", cc.evaluate(text)["metrics"])
+
+    def test_mandated_colon_list_is_not_scored(self):
+        # Both styles ask for '**Term:** description', so scoring it
+        # penalised replies for following the guide.
         text = ("- **Speed:** fast.\n- **Cost:** low.\n"
                 "- **Risk:** none.\n" + PAD)
-        self.assertIn("bold_term_list", cc.evaluate(text)["metrics"])
+        self.assertNotIn("bold_term_list", cc.evaluate(text)["metrics"])
 
     def test_appositive_contrast_detected(self):
         text = ("Operational load goes down, not up. The vacuum work "
@@ -551,6 +567,124 @@ class LintFileProcess(unittest.TestCase):
             proc = self.run_hook(payload)
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(proc.stdout.strip(), b"")
+
+
+class EditsSeeTheWholeFile(unittest.TestCase):
+    """An edit sends a fragment; the linter parses the finished file.
+
+    Without this, a docstring edited one line at a time is invisible,
+    because a fragment cannot be parsed and no string in it can be
+    told apart from a data literal.
+    """
+
+    LINT_FILE = os.path.join(REPO_ROOT, "scripts", "lint_file.py")
+    SOURCE = ('def revoke(token):\n'
+              '    """Revoke the refresh token."""\n'
+              '    token.revoked = True\n'
+              '\n'
+              'PENDING = """\n'
+              'SELECT a - b FROM t\n'
+              '"""\n')
+
+    def setUp(self):
+        shutil.rmtree(os.path.join(tempfile.gettempdir(),
+                                   "unclaudish-state"), ignore_errors=True)
+        self.home = tempfile.mkdtemp(prefix="edit-home-")
+        os.makedirs(os.path.join(self.home, ".claude"))
+        self.work = tempfile.mkdtemp(prefix="edit-work-")
+        self.path = os.path.join(self.work, "auth.py")
+        with open(self.path, "w") as f:
+            f.write(self.SOURCE)
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def edit(self, old_string, new_string, path=None, prompt="p",
+             replace_all=False):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                   "prompt_id": prompt,
+                   "tool_input": {"file_path": path or self.path,
+                                  "old_string": old_string,
+                                  "new_string": new_string,
+                                  "replace_all": replace_all}}
+        out = subprocess.run([sys.executable, self.LINT_FILE],
+                             input=json.dumps(payload).encode(),
+                             capture_output=True, env=env,
+                             timeout=10).stdout
+        return b"deny" in out
+
+    def test_claudish_edited_into_a_docstring_is_denied(self):
+        self.assertTrue(self.edit(
+            '    """Revoke the refresh token."""',
+            '    """It\'s worth noting that this commits."""'))
+
+    def test_clean_docstring_edit_passes(self):
+        self.assertFalse(self.edit(
+            '    """Revoke the refresh token."""',
+            '    """Revoke the token inside the caller transaction."""'))
+
+    def test_edit_inside_a_data_literal_passes(self):
+        self.assertFalse(self.edit("SELECT a - b FROM t",
+                                   "SELECT a - b, c - d FROM t"))
+
+    def test_untouched_claudish_elsewhere_is_not_charged_to_this_edit(self):
+        with open(self.path, "w") as f:
+            f.write('def f():\n'
+                    '    """It\'s worth noting that this commits."""\n'
+                    '    return 1\n')
+        self.assertFalse(self.edit("    return 1", "    return 2"))
+
+    def test_comment_edits_are_still_checked(self):
+        self.assertTrue(self.edit("    token.revoked = True",
+                                  "    # Here's the thing: it commits.\n"
+                                  "    token.revoked = True"))
+
+    def test_internal_marker_edits_are_exempt(self):
+        self.assertFalse(self.edit(
+            "    token.revoked = True",
+            "    # TODO: here's the thing, add retries\n"
+            "    token.revoked = True"))
+
+    def test_missing_file_falls_back_to_the_fragment(self):
+        missing = os.path.join(self.work, "nope.py")
+        self.assertTrue(self.edit("x", "# Here's the thing: no file.",
+                                  path=missing))
+
+    def test_old_string_not_in_the_file_falls_back(self):
+        self.assertTrue(self.edit("nothing like this exists",
+                                  "# Here's the thing: no match."))
+
+    def test_replace_all_is_honoured(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import lint_file
+        existing = "a = 1\nb = 1\n"
+        once = lint_file.projected_file(
+            existing, {"old_string": "1", "new_string": "2"})
+        every = lint_file.projected_file(
+            existing, {"old_string": "1", "new_string": "2",
+                       "replace_all": True})
+        self.assertEqual(once, "a = 2\nb = 1\n")
+        self.assertEqual(every, "a = 2\nb = 2\n")
+
+    def test_write_of_a_whole_file_still_works(self):
+        env = dict(os.environ)
+        env.pop("UNCLAUDISH_DISABLE", None)
+        env["HOME"] = self.home
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Write",
+                   "prompt_id": "w",
+                   "tool_input": {"file_path": self.path,
+                                  "content": 'def f():\n'
+                                             '    """It\'s worth noting'
+                                             ' that this commits."""\n'}}
+        out = subprocess.run([sys.executable, self.LINT_FILE],
+                             input=json.dumps(payload).encode(),
+                             capture_output=True, env=env,
+                             timeout=10).stdout
+        self.assertIn(b"deny", out)
 
 
 class RemindModes(unittest.TestCase):
@@ -1134,6 +1268,186 @@ class StatsFooter(unittest.TestCase):
                 with open(os.path.join(root, "evaluated.txt")) as f:
                     found.append(f.read())
         self.assertTrue(found and EM in found[0])
+
+
+class ThirteenFixes(unittest.TestCase):
+    """The changes pitched from the corpus review, locked in."""
+
+    STYLES = os.path.join(REPO_ROOT, "output-styles")
+
+    def style(self, name):
+        with open(os.path.join(self.STYLES, name), encoding="utf-8") as f:
+            return f.read()
+
+    def both_styles(self):
+        return [self.style("unclaudish.md"), self.style("unclaudish-max.md")]
+
+    # 1. The bare agreement opener.
+
+    def test_bare_agreement_opener_blocks(self):
+        for opener in ("You're right, and I was wrong.",
+                       "You are correct, the limit is 100.",
+                       "You're absolutely right, it retries twice."):
+            self.assertIn("syco_opener", hard_ids(opener), opener)
+
+    # 3. A spaced hyphen faking a dash.
+
+    def test_spaced_hyphen_blocks(self):
+        self.assertIn("em_dash",
+                      hard_ids("Use WAL - readers never block the writer."))
+
+    def test_hyphen_rule_leaves_real_hyphens_alone(self):
+        for clean in ("Run with --verbose and --dry-run flags.",
+                      "The window is 10 - 20 seconds.",
+                      "It is a well-known limit.",
+                      "- a bullet line\n- another bullet line"):
+            self.assertEqual(cc.lint_hard(clean)["verdict"], "pass", clean)
+
+    # 6. The mandated list format is not scored. (See SoftTierScoring.)
+
+    # 7. A fence tagged as prose stays scored.
+
+    def test_prose_fence_is_scored(self):
+        fenced = "```markdown\n# Notes\n\nThe fix" + EM + "shipped.\n```"
+        self.assertIn("em_dash", hard_ids(fenced))
+
+    def test_code_fence_is_still_skipped(self):
+        fenced = "```python\nx = 1  # a" + EM + "b\n```"
+        self.assertEqual(cc.lint_hard(fenced)["verdict"], "pass")
+
+    def test_every_prose_tag_is_recognised(self):
+        for tag in cc.PROSE_FENCE_TAGS:
+            fenced = "```%s\nThe fix%sshipped.\n```" % (tag, EM)
+            self.assertIn("em_dash", hard_ids(fenced), tag)
+
+    # 8. Blast radius in its literal sense.
+
+    def test_literal_blast_radius_passes(self):
+        text = ("Blast radius was limited to discounted carts, and no"
+                " data was corrupted." + PAD)
+        self.assertNotIn("jargon_blast_radius", cc.evaluate(text)["metrics"])
+
+    def test_rhetorical_blast_radius_scores(self):
+        text = "The blast radius of that refactor is enormous." + PAD
+        self.assertIn("jargon_blast_radius", cc.evaluate(text)["metrics"])
+
+    # 10. Python's parser decides what a docstring is.
+
+    def test_data_constant_is_not_documentation(self):
+        source = 'PENDING = """\nSELECT a - b FROM t\n"""\n'
+        self.assertEqual(cc.extract_comments(source, ".py"), [])
+
+    def test_real_docstrings_are_still_read(self):
+        source = ('"""Module doc."""\n\n\nclass A:\n    """Class doc."""\n'
+                  '\n    def f(self):\n        """Method doc."""\n')
+        found = cc.extract_comments(source, ".py")
+        self.assertEqual(sorted(found),
+                         ["Class doc.", "Method doc.", "Module doc."])
+
+    def test_unparseable_fragment_yields_no_docstrings(self):
+        fragment = '    """Doc fragment."""\n    return value\n'
+        self.assertEqual(cc.extract_comments(fragment, ".py"), [])
+
+    def test_hash_comments_survive_in_a_fragment(self):
+        fragment = "    # Here's the thing: it caches.\n    return value\n"
+        self.assertTrue(cc.extract_comments(fragment, ".py"))
+
+    # 12. A wall of text.
+
+    def test_long_unbroken_prose_scores(self):
+        wall = ("The cache holds product pages for five minutes and the"
+                " keys carry tenant and locale. ") * 12
+        self.assertIn("wall_of_text", cc.evaluate(wall)["metrics"])
+
+    def test_structure_resets_the_run(self):
+        block = ("The cache holds product pages for five minutes and the"
+                 " keys carry tenant and locale. ") * 6
+        broken = block + "\n\n- Invalidation is event driven.\n\n" + block
+        self.assertNotIn("wall_of_text", cc.evaluate(broken)["metrics"])
+
+    def test_short_reply_is_never_a_wall(self):
+        self.assertNotIn("wall_of_text",
+                         cc.evaluate("The cache expires after five"
+                                     " minutes." + PAD)["metrics"])
+
+    def test_threshold_is_the_measured_one(self):
+        self.assertEqual(cc.WALL_OF_TEXT_WORDS, 120)
+
+    def test_sentence_rhythm_check_is_gone(self):
+        self.assertFalse(hasattr(cc, "_uniformity_points"))
+        self.assertNotIn("uniformity",
+                         [m["id"] for m in cc.ALGO_METRICS])
+
+    # Style rules: 2, 4, 5, 9, 13.
+
+    def test_styles_ask_for_the_answer_on_its_own_line(self):
+        for text in self.both_styles():
+            self.assertIn("own line in bold", " ".join(text.split()))
+
+    def test_styles_protect_content_that_cannot_be_deferred(self):
+        for text in self.both_styles():
+            # The line wraps differently in each file.
+            flat = " ".join(text.split())
+            self.assertIn("legal or safety condition", flat)
+            self.assertIn("number that changes the decision", flat)
+
+    def test_document_budget_names_what_counts(self):
+        # An unscoped budget made the model treat critiques and
+        # summaries as documents, and max got longer on 8 of 10 demo
+        # prompts. The budget now names the deliverables it covers and
+        # says what stays a chat answer.
+        for text in self.both_styles():
+            flat = " ".join(text.split())
+            self.assertIn("named deliverable someone else will read", flat)
+            self.assertIn("chat answer under the normal cap", flat)
+        # No word ceiling: a published number reads as a target to
+        # fill, which is how release notes grew toward 450.
+        for text in self.both_styles():
+            flat = " ".join(text.split())
+            self.assertIn("as long as its material and no longer", flat)
+            self.assertIn("invent nothing to fill a section", flat)
+            self.assertIn("Each fact appears once", flat)
+            self.assertNotIn("450 words", flat)
+            self.assertNotIn("250 to 500 words", flat)
+
+    def test_styles_tie_the_offer_to_this_reply(self):
+        for text in self.both_styles():
+            self.assertIn("never out of habit", " ".join(text.split()))
+
+    def test_worked_examples_drop_the_stock_closer(self):
+        # The example taught one closing line, and it became a tic.
+        for text in self.both_styles():
+            head = text.split("## ")[0]
+            self.assertNotIn("Want the schema?", head)
+
+    def test_styles_require_content_under_a_heading(self):
+        for text in self.both_styles():
+            self.assertIn("Never stack a heading on another heading",
+                          " ".join(text.split()))
+
+    def test_styles_ask_to_break_a_wall_of_text(self):
+        for text in self.both_styles():
+            self.assertIn("120 words", text)
+
+    def test_styles_obey_their_own_wall_rule(self):
+        for name in ("unclaudish.md", "unclaudish-max.md"):
+            self.assertNotIn("wall_of_text",
+                             cc.evaluate(self.style(name))["metrics"], name)
+
+    # 11. Internal markers in the file linter.
+
+    def test_internal_markers_are_exempt(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import lint_file
+        for marker in ("TODO", "FIXME", "XXX", "HACK", "NOTE"):
+            line = " %s: here's the thing, fix retries" % marker
+            self.assertTrue(lint_file.INTERNAL_MARKER_RE.match(line), marker)
+
+    def test_ordinary_comments_are_not_exempt(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import lint_file
+        self.assertFalse(
+            lint_file.INTERNAL_MARKER_RE.match(" Here's the thing: it caches."))
 
 
 class UsageAccounting(unittest.TestCase):

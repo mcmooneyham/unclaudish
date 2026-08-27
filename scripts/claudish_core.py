@@ -12,6 +12,7 @@ source file contains none.
 """
 
 import json
+import ast
 import re
 import statistics
 
@@ -45,6 +46,12 @@ LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*\s*$")
 
 
+# A fence carrying one of these tags holds prose, not code, so its
+# lines stay in the scored corpus. Wrapping a whole reply in one is the
+# case that mattered: it hid the reply from every check.
+PROSE_FENCE_TAGS = ("markdown", "md", "text", "txt", "plaintext", "prose")
+
+
 def _strip_fenced_code(text):
     """Remove fenced code blocks with CommonMark close rules.
 
@@ -54,6 +61,7 @@ def _strip_fenced_code(text):
     kept_lines = []
     fence_char = None
     fence_len = 0
+    keeping_prose = False
     for line in text.split("\n"):
         open_match = FENCE_OPEN_RE.match(line)
         if fence_char is None:
@@ -61,6 +69,8 @@ def _strip_fenced_code(text):
                 marker = open_match.group(1)
                 fence_char = marker[0]
                 fence_len = len(marker)
+                tag = line.strip()[len(marker):].strip().lower()
+                keeping_prose = tag in PROSE_FENCE_TAGS
             else:
                 kept_lines.append(line)
         else:
@@ -68,6 +78,9 @@ def _strip_fenced_code(text):
                     and len(open_match.group(1)) >= fence_len
                     and line.strip() == open_match.group(1)):
                 fence_char = None
+                keeping_prose = False
+            elif keeping_prose:
+                kept_lines.append(line)
     return "\n".join(kept_lines)
 
 
@@ -157,7 +170,7 @@ REGEX_METRICS = [
         "weight": 5.0,
         "cap": 4.0,
         "pattern": re.compile(
-            "(?<=[^\\n])[\u2014\u2E3A\u2E3B]|(?<=[A-Za-z]) \u2013 (?=[A-Za-z])"
+            "(?<=[^\\n])[\u2014\u2E3A\u2E3B]|(?<=[A-Za-z]) \u2013 (?=[A-Za-z])|(?<=[A-Za-z]) - (?=[A-Za-z])"
         ),
         "advice": "replace the dash with a comma, colon, or new sentence",
     },
@@ -168,7 +181,7 @@ REGEX_METRICS = [
         "anchored": True,
         "pattern": re.compile(
             r"\A\s*(?:you(?:'re| are) "
-            r"(?:absolutely|completely|totally) (?:right|correct)"
+            r"(?:(?:absolutely|completely|totally)\s+)?(?:right|correct)"
             r"|great (?:question|catch|point)"
             r"|excellent (?:question|point)"
             r"|perfect)(?=\s*(?:[.!,:;]|\n|$))",
@@ -291,12 +304,28 @@ REGEX_METRICS = [
         "weight": 1.0,
         "cap": 5.0,
         "pattern": re.compile(
-            r"\bload-bearing\b|\bfootguns?\b|\bblast radius\b"
+            r"\bload-bearing\b|\bfootguns?\b"
             r"|\bbattle-tested\b|\bfirst-class citizen\b|\btable stakes\b"
             r"|\bnorth star\b|\bsilver bullet\b|\bsharp edges\b"
             r"|\bgame-chang\w+\b|\bthe \w+ landscape\b|\byour \w+ journey\b"
             r"|\bdouble-click on\b|\btapestry\b"
             r"|\bseamless(?:ly)?\b|\bleverag(?:e|es|ed|ing)\b",
+            re.I,
+        ),
+    },
+    {
+        # Split out of jargon: the styles allow an engineering term in
+        # its literal sense, and a postmortem describing real incident
+        # scope is exactly that. A scope word nearby marks the literal
+        # use.
+        "id": "jargon_blast_radius",
+        "tier": "soft",
+        "weight": 1.0,
+        "cap": 5.0,
+        "pattern": re.compile(r"\bblast radius\b", re.I),
+        "exclude": re.compile(
+            r"\b(?:limited|contained|bounded|confined|scoped|narrow(?:ed)?"
+            r"|small|large|zero|one|single|only)\b",
             re.I,
         ),
     },
@@ -542,16 +571,29 @@ def _staccato_points(sentences):
     return points
 
 
-def _uniformity_points(sentences):
-    """Penalize suspiciously uniform sentence lengths."""
-    if len(sentences) < 8:
+WALL_OF_TEXT_WORDS = 120
+STRUCTURE_LINE_RE = re.compile(r"^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|\||`{3,}|>)")
+
+
+def _wall_of_text_points(text):
+    """Penalize a long run of prose with no structure in it.
+
+    Measured on the benchmark corpus: at 120 words this fires on 66.7%
+    of unstyled replies, 37.5% of plain and 22.6% of max, and the
+    median longest run is 171, 101 and 73 words, so a normal styled
+    reply stays under the line. It replaced a sentence-length variance
+    check that fired more on styled replies than on unstyled ones.
+    """
+    longest = run = 0
+    for block in text.split("\n\n"):
+        if not block.strip() or STRUCTURE_LINE_RE.match(block):
+            run = 0
+            continue
+        run += len(block.split())
+        longest = max(longest, run)
+    if longest <= WALL_OF_TEXT_WORDS:
         return 0.0
-    word_counts = [len(s.split()) for s in sentences]
-    mean = statistics.mean(word_counts)
-    if mean == 0:
-        return 0.0
-    cv = statistics.pstdev(word_counts) / mean
-    return min(5.0, max(0.0, (0.35 - cv) * 10))
+    return min(4.0, (longest - WALL_OF_TEXT_WORDS) / 60.0)
 
 
 def _aphoristic_closer_points(phrase_corpus):
@@ -574,10 +616,11 @@ def _aphoristic_closer_points(phrase_corpus):
 
 def _bold_term_list_points(text):
     """+2 per block of >= 3 '**Term:** explanation' list items."""
-    # Matches '**Term:** text', '**Term**: text', and the full-bold
-    # lead-sentence form '**Term is a non-issue.** text'.
+    # Only the full-bold lead-sentence form '**Term is a non-issue.**'.
+    # The colon form '**Term:** text' is what both styles ask for, so
+    # scoring it penalised replies for following the guide.
     pattern = re.compile(
-        r"^\s*(?:[-*+]|\d+[.)])\s+\*\*[^*]{2,60}?(?:[:.]\*\*|\*\*[:.])"
+        r"^\s*(?:[-*+]|\d+[.)])\s+\*\*[^*]{2,60}?\.\*\*"
     )
     points = 0.0
     run = 0
@@ -600,7 +643,7 @@ def _exclaim_points(phrase_corpus):
 
 ALGO_METRICS = [
     {"id": "staccato", "tier": "soft"},
-    {"id": "uniformity", "tier": "soft"},
+    {"id": "wall_of_text", "tier": "soft"},
     {"id": "aphoristic_closer", "tier": "soft"},
     {"id": "bold_term_list", "tier": "soft"},
     {"id": "exclaim", "tier": "soft"},
@@ -701,7 +744,10 @@ def evaluate(text, tiers=("hard", "soft")):
     if "soft" in tiers and english:
         algo_points = {
             "staccato": _staccato_points(sentences),
-            "uniformity": _uniformity_points(sentences),
+            # Measured on the text as written: the sentence corpus has
+            # already had lists and headings removed, which is exactly
+            # the structure this metric looks for.
+            "wall_of_text": _wall_of_text_points(text),
             "aphoristic_closer": _aphoristic_closer_points(phrase_corpus),
             "bold_term_list": _bold_term_list_points(text),
             "exclaim": _exclaim_points(phrase_corpus),
@@ -763,14 +809,36 @@ _STRING_RE = re.compile(
     r"|`(?:[^`\\]|\\.)*`")
 
 
+def _python_docstrings(content):
+    """Docstrings as Python defines them, or None when text will not
+    parse.
+
+    An edit passes a fragment rather than a file, and a fragment cannot
+    be parsed. Returning None there means no string is treated as
+    documentation, which is safer than guessing: a SQL constant is not
+    a docstring, and denying that write is worse than missing one.
+    """
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError, RecursionError):
+        return None
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            text = ast.get_docstring(node)
+            if text:
+                found.append(text)
+    return found
+
+
 def extract_comments(content, ext):
     """Return the comment text spans of a code file, or [] for file
     types the extractor does not understand."""
     if ext in HASH_COMMENT_EXTS:
         docstrings = []
         if ext == ".py":
-            docstrings = [g for m in _DOCSTRING_RE.finditer(content)
-                          for g in m.groups() if g]
+            docstrings = _python_docstrings(content) or []
         stripped = _STRING_RE.sub('""', content)
         return docstrings + [m.group(1) for m in
                              _HASH_LINE_RE.finditer(stripped)]
